@@ -15,14 +15,8 @@ Reference documentation for Claude Code. Each file covers one area of the projec
 | File | Purpose |
 |------|---------|
 | **This file** | Documentation index |
-<!-- Add rows as you create docs:
-| [frontend.md](frontend.md) | CSS framework, JS patterns, component library |
-| [views.md](views.md) | View/template conventions and layout patterns |
-| [permissions.md](permissions.md) | Roles, permissions, access control |
-| [settings.md](settings.md) | Config system, settings structure |
-| [models.md](models.md) | All models, relationships, scopes |
-| [api.md](api.md) | API endpoints, auth, request/response formats |
--->
+| [tally-integration.md](tally-integration.md) | Tally integration architecture, services, usage examples, API endpoints |
+| [tally-api-reference.md](tally-api-reference.md) | TallyPrime XML API format, request/response examples, report names |
 
 ## How to Generate .claude/ Reference Files
 

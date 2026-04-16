@@ -12,12 +12,31 @@ class TallyHttpClient
 
     private int $timeout;
 
-    public function __construct()
+    private string $company;
+
+    public function __construct(string $host, int $port, string $company = '', int $timeout = 30)
     {
-        $host = config('tally.host');
-        $port = config('tally.port');
         $this->url = "http://{$host}:{$port}";
-        $this->timeout = config('tally.timeout', 30);
+        $this->company = $company;
+        $this->timeout = $timeout;
+    }
+
+    /**
+     * Create from config values (fallback for default connection).
+     */
+    public static function fromConfig(): static
+    {
+        return new static(
+            config('tally.host', 'localhost'),
+            (int) config('tally.port', 9000),
+            config('tally.company', ''),
+            (int) config('tally.timeout', 30),
+        );
+    }
+
+    public function getCompany(): string
+    {
+        return $this->company;
     }
 
     /**

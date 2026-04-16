@@ -7,9 +7,9 @@ return [
     | TallyPrime Connection Settings
     |--------------------------------------------------------------------------
     |
-    | Configure the connection to your TallyPrime instance running in
-    | server mode. Tally must be running with HTTP server enabled on
-    | the specified port for the integration to work.
+    | Default connection used when no specific connection code is provided.
+    | For multi-company setups, connections are stored in the
+    | tally_connections database table and resolved via route middleware.
     |
     */
 
