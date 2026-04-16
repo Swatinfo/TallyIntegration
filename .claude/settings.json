@@ -1,0 +1,38 @@
+{
+    "permissions": {
+        "allow": [
+            "Bash(php artisan *)",
+            "Bash(./vendor/bin/pint *)",
+            "Bash(composer *)",
+            "Bash(npm *)",
+            "Bash(npx *)",
+            "Bash(node *)",
+            "Bash(php -r *)",
+            "Bash(find *)",
+            "Bash(ls *)",
+            "Bash(wc *)",
+            "Bash(grep *)",
+            "Bash(echo *)",
+            "Bash(cp *)",
+            "Bash(mkdir *)",
+            "Bash(cat *)",
+            "Bash(diff *)",
+            "Bash(head *)",
+            "Bash(tail *)",
+            "Bash(sort *)"
+        ],
+        "deny": [
+            "Bash(rm -rf *)",
+            "Bash(rm -r *)",
+            "Bash(del /s *)",
+            "Bash(git push --force *)",
+            "Bash(git push -f *)",
+            "Bash(git reset --hard *)",
+            "Bash(git checkout -- *)",
+            "Bash(git clean -f *)",
+            "Bash(git clean -fd *)",
+            "Bash(git branch -D *)"
+        ]
+    },
+    "plansDirectory": ".claude/plans"
+}

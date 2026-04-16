@@ -1,0 +1,56 @@
+# =============================================================================
+# .gitignore template — merge these entries into your project's .gitignore
+# =============================================================================
+
+# ---- Claude Code entries (ADD THESE TO YOUR EXISTING .gitignore) ----
+
+# Claude Code local settings (personal permissions, hooks, MCP config)
+.claude/settings.local.json
+
+# Session plans (auto-generated working documents)
+.claude/plans/
+
+# ---- Common project ignores (keep what applies to your stack) ----
+
+# Environment
+.env
+.env.backup
+.env.production
+.env.local
+.env.*.local
+
+# Dependencies
+/vendor
+/node_modules
+
+# IDE
+/.idea
+/.vscode
+/.fleet
+/.zed
+/.nova
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Build output (uncomment what applies)
+# /public/build
+# /dist
+# /build
+# /.next
+# /out
+
+# Test cache
+.phpunit.result.cache
+/.phpunit.cache
+
+# Archives & backups
+*.zip
+*.tar.gz
+*.rar
+
+# Lock files (optional — some teams commit these)
+# composer.lock
+# package-lock.json

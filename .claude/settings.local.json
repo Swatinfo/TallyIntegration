@@ -1,0 +1,96 @@
+{
+  "fileSuggestion": {
+    "type": "command",
+    "command": ".claude/file-suggestions.sh"
+  },
+  "permissions": {
+    "allow": [
+      "Edit",
+      "Write",
+      "Bash(php artisan *)",
+      "Bash(vendor/bin/pint *)",
+      "Bash(composer *)",
+      "Bash(npm *)",
+      "Bash(node *)",
+      "Bash(php *)",
+      "Bash(find *)",
+      "Bash(ls *)",
+      "Bash(grep *)",
+      "Bash(cat *)",
+      "Bash(wc *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(diff *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(echo *)",
+      "Bash(sort *)",
+      "Bash(curl *)",
+      "Bash(cd *)",
+      "Bash(git *)",
+      "Bash(python *)",
+      "Bash(python3 *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(rm -r *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"STOP: Before editing any view/template file, you MUST have read the relevant .docs/ file for that feature area AND tasks/lessons.md for past corrections. State which files you read. If you have not read them yet, read them NOW before making this edit.\"",
+            "if": "Edit(*blade.php)",
+            "statusMessage": "Checking pre-read requirements for views..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"POST-EDIT CHECK: Verify edited file follows project conventions (correct CSS framework, correct component patterns, no banned patterns).\"",
+            "if": "Edit(*blade.php)",
+            "statusMessage": "Checking edit conventions..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "CHANGE_THIS_MATCHER_TO_YOUR_FEATURE_KEYWORDS",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"REMINDER: For [feature area] work, read these first: (1) .docs/[file1].md, (2) .docs/[file2].md. State which files you read before generating code.\""
+          }
+        ]
+      },
+      {
+        "matcher": "setting|config",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"REMINDER: For settings/config work, read .docs/settings.md first.\""
+          }
+        ]
+      },
+      {
+        "matcher": "permission|role|middleware|access",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"REMINDER: For permission/role work, read .docs/permissions.md + .claude/database-schema.md first.\""
+          }
+        ]
+      }
+    ]
+  }
+}

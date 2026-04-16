@@ -1,0 +1,43 @@
+# Dependencies
+vendor/
+node_modules/
+
+# Storage & cache
+storage/
+bootstrap/cache/
+
+# Environment secrets
+.env
+.env.*
+
+# Backups & archives
+*.zip
+*.tar.gz
+*.rar
+
+# Lock files (large, not useful for Claude)
+composer.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Test cache
+.phpunit.result.cache
+
+# Build output
+/public/build/
+/dist/
+/build/
+/.next/
+/out/
+
+# Archives & ignored docs
+.ignore/
+
+# IDE
+/.idea/
+/.vscode/
+/.fleet/
+/.zed/
+
+# Add project-specific ignores below:
