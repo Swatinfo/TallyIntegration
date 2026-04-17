@@ -12,7 +12,8 @@
         "php": "^8.3",
         "laravel/framework": "^13.0",
         "laravel/sanctum": "^4.0",
-        "laravel/tinker": "^3.0"
+        "laravel/tinker": "^3.0",
+        "nwidart/laravel-modules": "*"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
@@ -28,12 +29,16 @@
         "psr-4": {
             "App\\": "app/",
             "Database\\Factories\\": "database/factories/",
-            "Database\\Seeders\\": "database/seeders/"
+            "Database\\Seeders\\": "database/seeders/",
+            "Modules\\Tally\\": "Modules/Tally/app/",
+            "Modules\\Tally\\Database\\Factories\\": "Modules/Tally/database/factories/",
+            "Modules\\Tally\\Database\\Seeders\\": "Modules/Tally/database/seeders/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Tests\\": "tests/"
+            "Tests\\": "tests/",
+            "Modules\\Tally\\Tests\\": "Modules/Tally/tests/"
         }
     },
     "scripts": {
@@ -84,7 +89,8 @@
         "sort-packages": true,
         "allow-plugins": {
             "pestphp/pest-plugin": true,
-            "php-http/discovery": true
+            "php-http/discovery": true,
+            "wikimedia/composer-merge-plugin": true
         }
     },
     "minimum-stability": "stable",

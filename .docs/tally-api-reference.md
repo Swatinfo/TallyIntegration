@@ -1,6 +1,8 @@
 # Tally XML API Reference
 
-Based on official TallyPrime Demo Samples (`.docs/Demo Samples/`).
+Based on official TallyPrime Demo Samples (`.docs/Demo Samples/`). XML envelopes below match `Modules/Tally/app/Services/TallyXmlBuilder.php` exactly.
+
+**Last verified:** 2026-04-17
 
 ## Connection
 
@@ -47,6 +49,7 @@ Based on official TallyPrime Demo Samples (`.docs/Demo Samples/`).
   <BODY>
     <DESC>
       <STATICVARIABLES>
+        <EXPLODEFLAG>Yes</EXPLODEFLAG>
         <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
         <SVCURRENTCOMPANY>{CompanyName}</SVCURRENTCOMPANY>
       </STATICVARIABLES>
@@ -84,7 +87,7 @@ Based on official TallyPrime Demo Samples (`.docs/Demo Samples/`).
     <DESC>
       <STATICVARIABLES>
         <SVCURRENTCOMPANY>ABC Company Ltd</SVCURRENTCOMPANY>
-        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+        <SVEXPORTFORMAT>BinaryXML</SVEXPORTFORMAT>
       </STATICVARIABLES>
       <FETCHLIST>
         <FETCH>Name</FETCH>
@@ -230,12 +233,12 @@ Response: `ALTERED=1, ERRORS=0`
 
 ### All Voucher Actions
 
-| ACTION | Purpose | Response field |
-|--------|---------|---------------|
-| `Create` | New voucher | CREATED |
-| `Alter` | Modify existing (needs MASTERID) | ALTERED |
-| `Cancel` | Void with audit trail (needs DATE+TAGVALUE+VCHTYPE) | COMBINED |
-| `Delete` | Permanent removal (needs DATE+TAGVALUE+VCHTYPE) | ALTERED |
+| ACTION | Purpose | Response field | Notes |
+|--------|---------|---------------|-------|
+| *(none)* | New voucher — bare `<VOUCHER>` tag | CREATED | No ACTION attribute on creation |
+| `Alter` | Modify existing (needs MASTERID or Voucher Number) | ALTERED | ACTION attribute on `<VOUCHER>` |
+| `Cancel` | Void with audit trail (needs DATE+TAGVALUE+VCHTYPE) | COMBINED | Attribute format |
+| `Delete` | Permanent removal (needs DATE+TAGVALUE+VCHTYPE) | ALTERED | Attribute format |
 
 ## Amount Sign Convention (from Payment sample)
 
@@ -254,6 +257,57 @@ Response: `ALTERED=1, ERRORS=0`
 | Stock Group | `Stock Group` | `StockGroup` |
 | Unit | `Unit` | `Unit` |
 | Cost Centre | `Cost Centre` | `CostCentre` |
+
+## Function Export (TYPE=Function)
+
+Invoke Tally built-in functions. Returns the function result directly.
+
+```xml
+<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Function</TYPE>
+    <ID>$$SystemPeriodFrom</ID>
+  </HEADER>
+</ENVELOPE>
+```
+
+| Function | Returns | Use Case |
+|----------|---------|----------|
+| `$$SystemPeriodFrom` | Financial year start date | Auto-detect FY period |
+| `$$SystemPeriodTo` | Financial year end date | Auto-detect FY period |
+| `$$NumStockItems` | Count of stock items | Quick inventory count |
+
+## AlterID Query (Incremental Sync)
+
+TDL-based request to get the company's current master and voucher AlterIDs. Used to detect if data changed since last sync — if IDs are same, skip the sync.
+
+```xml
+<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Data</TYPE>
+    <ID>TallySyncReport</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+        <SVCURRENTCOMPANY>{CompanyName}</SVCURRENTCOMPANY>
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <!-- TDL report that queries $AltMstId and $AltVchId from Company object -->
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>
+```
+
+Response returns `ALTMSTID` and `ALTVCHID` — compare with stored values to determine if sync is needed.
 
 ## Report IDs (used in TYPE=Data exports)
 

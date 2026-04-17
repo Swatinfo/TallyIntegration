@@ -2,39 +2,32 @@
 
 Consolidated rules from past sessions. Follow these in all future work.
 
-<!-- 
-  This file captures coding conventions and preferences discovered during work.
-  Update it whenever the user corrects your approach or confirms a pattern works.
-  Structure: Category > bullet points with dates for traceability.
--->
+## Module Structure
+- **nwidart/laravel-modules v13**: All Tally code in `Modules/Tally/`. Namespace `Modules\Tally\*`
+- **PSR-4 mapping**: `Modules/Tally/app/` maps to `Modules\Tally\` namespace
+- **No code in main app/**: All Tally logic must stay inside the module
 
-## Frontend Stack
-<!-- Define your frontend stack so Claude doesn't guess wrong -->
-- **[Framework]**: [e.g., Bootstrap 5.3 + jQuery 3.7 — local vendor files, no build step]
-- **[CSS approach]**: [e.g., Custom prefix `xyz-` for all custom classes in `public/css/app.css`]
-- **[JS approach]**: [e.g., Namespace pattern `APP.*` in `public/js/app.js`]
+## Tally XML Format
+- **Always verify against Demo Samples**: `.docs/Demo Samples/` is the canonical XML format reference
+- **Header format**: `<VERSION>1</VERSION>` + `<TYPE>` + `<ID>` — NOT `<TALLYREQUEST>Export Data</TALLYREQUEST>`
+- **Three export types**: Data (reports), Collection (lists), Object (single entity by name)
+- **Voucher creation**: Use `VOUCHERTYPENAME` child element, not `VCHTYPE` attribute
+- **Voucher cancel/delete**: Use attribute format (DATE, TAGNAME, TAGVALUE, VCHTYPE, ACTION)
+- **FETCHLIST/FETCH** for field selection, not DESC/FIELD
 
-## Responsive Design
-<!-- Document responsive breakpoints and patterns -->
-- **Navbar**: [e.g., `navbar-expand-xl` — 1200px breakpoint]
-- **Tables**: [e.g., Dual layout for 5+ columns — desktop table + mobile cards]
-- **Forms/Filters**: [e.g., `col-6 col-md-auto` pattern]
-
-## CSS Rules
-<!-- Document CSS conventions, custom properties, component classes -->
-
-## JS Patterns
-<!-- Document JavaScript conventions, namespaces, utilities -->
+## API Patterns
+- **Consistent response**: Always `{ success: bool, data: mixed, message: string }`
+- **Service layer**: Controllers delegate to services. Controllers only handle validation and response formatting
+- **Multi-connection**: Route prefix `{connection}` resolved by middleware
 
 ## Config / Settings
-<!-- Document config system rules, gotchas -->
-
-## Views / Templates
-<!-- Document view conventions -->
-- [e.g., Always `@extends`/`@section` pattern — never component wrappers]
+- **Module config**: `Modules/Tally/config/config.php`, published as `config('tally.*')`
+- **Env vars**: `TALLY_HOST`, `TALLY_PORT`, `TALLY_COMPANY`, `TALLY_TIMEOUT`
 
 ## Testing
-<!-- Document testing patterns and known issues -->
+- **Pest 4**: All tests use Pest syntax
+- **Pint**: Run `vendor/bin/pint --dirty --format agent` after PHP changes
 
 ## Workflow Preferences
-<!-- Document how the user prefers to work -->
+- **Windows dev environment**: Use PHP scripts for batch file operations (sed fails with backslashes)
+- **Module portability**: Keep module self-contained — no dependencies on main app code

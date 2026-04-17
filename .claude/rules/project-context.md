@@ -1,30 +1,29 @@
 # Project Context
 
 ## Domain
-<!-- Replace with your project's domain description -->
-[PROJECT_NAME] — [what the project does, who uses it, key business domain].
+TallyIntegration — Laravel module for integrating with TallyPrime accounting software. Used by businesses that run TallyPrime for accounting and need programmatic access via REST API.
 
 ## Business Logic
-<!-- List key business rules Claude needs to know -->
-- **[Rule 1]**: [e.g., Currency format, calculation formulas]
-- **[Rule 2]**: [e.g., User types and their different behaviors]
-- **[Rule 3]**: [e.g., Workflow stages and transitions]
+- **Tally XML Protocol**: All communication uses HTTP POST with XML bodies. Three export types (Data/Collection/Object) and import format. Official format verified against `.docs/Demo Samples/`.
+- **Amount Convention**: Debit = ISDEEMEDPOSITIVE=Yes, Credit = ISDEEMEDPOSITIVE=No. Sign conventions differ by voucher type.
+- **Object Identity**: Tally uses **names** (case-insensitive), not numeric IDs, to identify all entities.
+- **Date Format**: YYYYMMDD for most operations. DD-Mon-YYYY for voucher cancel/delete attributes.
+- **Multi-Connection**: One Tally instance may have multiple companies. Multiple instances may exist at different locations. Each combination = one `tally_connections` row.
 
-## Brand
-<!-- Colors, fonts, design tokens if applicable -->
-- **Colors**: [e.g., Primary #XXXXXX, Accent #XXXXXX]
-- **Fonts**: [e.g., Inter for headings, system-ui for body]
-
-## User Roles
-<!-- List all roles with brief description -->
-- **[role_1]**: [access level and responsibilities]
-- **[role_2]**: [access level and responsibilities]
+## Tally Editions
+- **TallyPrime Standalone (Silver)**: Single-user desktop. API on localhost.
+- **TallyPrime Server (Gold)**: Multi-user server. Always-on, best for integration.
+- **TallyPrime Cloud Access**: Remote desktop (OCI VM). Same API, but needs network tunnel.
+- All three use the **identical XML API protocol**.
 
 ## Key Workflows
-<!-- Document main user workflows/flows -->
+1. **Register connection** → POST /api/tally/connections with host/port/company
+2. **Health check** → GET /api/tally/{conn}/health
+3. **Manage masters** → CRUD ledgers, groups, stock items via REST
+4. **Create vouchers** → POST with type + data, or use convenience methods
+5. **Fetch reports** → GET /api/tally/{conn}/reports/{type}
 
-## Permission System
-<!-- How permissions work in this project -->
-
-## Visibility / Access Control
-<!-- Who can see what data -->
+## Module Architecture
+- All code in `Modules/Tally/` (nwidart/laravel-modules v13)
+- Namespace: `Modules\Tally\*`
+- Self-contained and portable — copy to any Laravel project

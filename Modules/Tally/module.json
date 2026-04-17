@@ -1,0 +1,11 @@
+{
+    "name": "Tally",
+    "alias": "tally",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\Tally\\Providers\\TallyServiceProvider"
+    ],
+    "files": []
+}
