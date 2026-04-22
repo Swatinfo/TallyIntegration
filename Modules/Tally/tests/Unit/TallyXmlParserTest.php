@@ -99,6 +99,70 @@ it('handles BOM in XML', function () {
     expect($result)->toHaveKey('HEADER');
 });
 
+it('strips raw ASCII control bytes that Tally emits inside reserved masters', function () {
+    // TallyPrime wraps PARENTSTRUCTURE values with raw 0x03 (ETX) delimiters.
+    // Without sanitisation this throws TallyXmlParseException ("Unknown XML error").
+    $xml = '<ENVELOPE><BODY><DATA><COLLECTION>'.
+        '<GROUP NAME="Indirect Incomes">'.
+        "<PARENTSTRUCTURE>\x03Indirect Incomes\x03</PARENTSTRUCTURE>".
+        '</GROUP></COLLECTION></DATA></BODY></ENVELOPE>';
+
+    $groups = TallyXmlParser::extractCollection($xml, 'GROUP');
+
+    expect($groups)->toHaveCount(1);
+    expect($groups[0]['PARENTSTRUCTURE'])->toBe('Indirect Incomes');
+});
+
+it('strips numeric character references to forbidden XML 1.0 code points', function () {
+    // TallyPrime emits &#4; inside <PARENT> for default Primary-based groups.
+    // Raw libxml rejects these references with "xmlParseCharRef: invalid xmlChar value".
+    $xml = '<ENVELOPE><BODY><DATA><COLLECTION>'.
+        '<GROUP NAME="Capital Account">'.
+        '<PARENT>&#4; Primary</PARENT>'.
+        '</GROUP></COLLECTION></DATA></BODY></ENVELOPE>';
+
+    $groups = TallyXmlParser::extractCollection($xml, 'GROUP');
+
+    expect($groups)->toHaveCount(1);
+    expect($groups[0]['PARENT'])->toBe(' Primary');
+});
+
+it('preserves text content under #text when the element also carries attributes', function () {
+    // Tally stamps TYPE="String" / TYPE="Logical" on nearly every leaf element.
+    // Without this, PARENT="Primary" and ISREVENUE="Yes" came back empty.
+    $xml = '<ENVELOPE><BODY><DATA><COLLECTION>'.
+        '<GROUP NAME="Sales Accounts">'.
+        '<PARENT TYPE="String">Primary</PARENT>'.
+        '<ISREVENUE TYPE="Logical">Yes</ISREVENUE>'.
+        '</GROUP></COLLECTION></DATA></BODY></ENVELOPE>';
+
+    $groups = TallyXmlParser::extractCollection($xml, 'GROUP');
+
+    expect($groups)->toHaveCount(1);
+    expect($groups[0]['PARENT']['@attributes']['TYPE'])->toBe('String');
+    expect($groups[0]['PARENT']['#text'])->toBe('Primary');
+    expect($groups[0]['ISREVENUE']['@attributes']['TYPE'])->toBe('Logical');
+    expect($groups[0]['ISREVENUE']['#text'])->toBe('Yes');
+});
+
+it('returns a plain string when a leaf element has text but no attributes', function () {
+    $xml = '<ENVELOPE><HEADER><VERSION>1</VERSION><STATUS>1</STATUS></HEADER></ENVELOPE>';
+
+    $result = TallyXmlParser::parse($xml);
+
+    expect($result['HEADER']['VERSION'])->toBe('1');
+    expect($result['HEADER']['STATUS'])->toBe('1');
+});
+
+it('preserves valid XML whitespace while stripping control bytes', function () {
+    // \t, \n, \r are legal in XML 1.0 and must survive sanitization.
+    $xml = "<ENVELOPE>\r\n\t<HEADER><VERSION>1</VERSION></HEADER>\r\n</ENVELOPE>";
+
+    $result = TallyXmlParser::parse($xml);
+
+    expect($result)->toHaveKey('HEADER');
+});
+
 it('extracts errors from import result', function () {
     $errors = TallyXmlParser::extractErrors(tallyFixture('import-error.xml'));
 

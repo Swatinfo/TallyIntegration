@@ -21,6 +21,7 @@ class LedgerController extends Controller
     public function index(Request $request): JsonResponse
     {
         $ledgers = $this->service->list();
+        $ledgers = $this->filterByField($ledgers, 'PARENT', $request->query('parent'));
         $paginated = $this->paginate($ledgers, $request);
 
         return response()->json([
@@ -31,7 +32,7 @@ class LedgerController extends Controller
         ]);
     }
 
-    public function show(string $name): JsonResponse
+    public function show(string $connection, string $name): JsonResponse
     {
         $ledger = $this->service->get(urldecode($name));
 
@@ -61,7 +62,7 @@ class LedgerController extends Controller
         ], $result['errors'] === 0 ? 201 : 422);
     }
 
-    public function update(UpdateLedgerRequest $request, string $name): JsonResponse
+    public function update(UpdateLedgerRequest $request, string $connection, string $name): JsonResponse
     {
         $result = $this->service->update(urldecode($name), $request->validated());
 
@@ -72,7 +73,7 @@ class LedgerController extends Controller
         ]);
     }
 
-    public function destroy(string $name): JsonResponse
+    public function destroy(string $connection, string $name): JsonResponse
     {
         $result = $this->service->delete(urldecode($name));
 

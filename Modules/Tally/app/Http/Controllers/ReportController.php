@@ -31,6 +31,55 @@ class ReportController extends Controller
             'outstandings' => $this->service->outstandings($request->query('type', 'receivable')),
             'stock-summary' => $this->service->stockSummary(),
             'day-book' => $this->service->dayBook($request->query('date', '')),
+            // Phase 9B additions
+            'cash-book' => $this->service->cashBankBook(
+                $request->query('ledger', ''),
+                $request->query('from', ''),
+                $request->query('to', ''),
+            ),
+            'sales-register' => $this->service->salesRegister(
+                $request->query('from', ''),
+                $request->query('to', ''),
+            ),
+            'purchase-register' => $this->service->purchaseRegister(
+                $request->query('from', ''),
+                $request->query('to', ''),
+            ),
+            'aging' => $this->service->agingAnalysis(
+                $request->query('type', 'receivable'),
+                $request->query('as_of'),
+            ),
+            'cash-flow' => $this->service->cashFlow(
+                $request->query('from', ''),
+                $request->query('to', ''),
+            ),
+            'funds-flow' => $this->service->fundsFlow(
+                $request->query('from', ''),
+                $request->query('to', ''),
+            ),
+            'receipts-payments' => $this->service->receiptsPayments(
+                $request->query('from', ''),
+                $request->query('to', ''),
+            ),
+            'stock-movement' => $this->service->stockMovement(
+                $request->query('stock_item', ''),
+                $request->query('from', ''),
+                $request->query('to', ''),
+            ),
+            // Phase 9D — banking reports
+            'bank-reconciliation' => $this->service->bankReconciliation(
+                $request->query('bank', ''),
+                $request->query('from', ''),
+                $request->query('to', ''),
+            ),
+            'cheque-register' => $this->service->chequeRegister(
+                $request->query('from', ''),
+                $request->query('to', ''),
+            ),
+            'post-dated-cheques' => $this->service->postDatedCheques(
+                $request->query('from', ''),
+                $request->query('to', ''),
+            ),
             default => null,
         };
 
@@ -38,7 +87,7 @@ class ReportController extends Controller
             return response()->json([
                 'success' => false,
                 'data' => null,
-                'message' => "Unknown report type: {$type}. Valid types: balance-sheet, profit-and-loss, trial-balance, ledger, outstandings, stock-summary, day-book",
+                'message' => "Unknown report type: {$type}. Valid types: balance-sheet, profit-and-loss, trial-balance, ledger, outstandings, stock-summary, day-book, cash-book, sales-register, purchase-register, aging, cash-flow, funds-flow, receipts-payments, stock-movement, bank-reconciliation, cheque-register, post-dated-cheques",
             ], 404);
         }
 

@@ -1,5 +1,6 @@
 <?php
 
+use Modules\Tally\Logging\TallyLogChannel;
 use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\SyslogUdpHandler;
@@ -83,11 +84,9 @@ return [
         ],
 
         'tally' => [
-            'driver' => 'daily',
-            'path' => storage_path('logs/tally.log'),
-            'level' => 'debug',
-            'days' => 14,
-            'replace_placeholders' => true,
+            'driver' => 'custom',
+            'via' => TallyLogChannel::class,
+            'level' => env('TALLY_LOG_LEVEL', 'debug'),
         ],
 
         'papertrail' => [

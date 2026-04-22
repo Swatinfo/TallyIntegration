@@ -46,6 +46,22 @@ it('builds collection export request with TYPE=Collection and EXPLODEFLAG', func
         ->toContain('<EXPLODEFLAG>Yes</EXPLODEFLAG>');
 });
 
+it('emits EXPLODEFLAG=No when explode is disabled', function () {
+    // Required for Units list — explode recursion can segfault TallyPrime.
+    $xml = TallyXmlBuilder::buildCollectionExportRequest(
+        'List of Units',
+        fetchFields: ['NAME', 'SYMBOL'],
+        company: 'TestCompany',
+        explode: false,
+    );
+
+    expect($xml)
+        ->toContain('<EXPLODEFLAG>No</EXPLODEFLAG>')
+        ->not->toContain('<EXPLODEFLAG>Yes</EXPLODEFLAG>')
+        ->toContain('<FETCH>NAME</FETCH>')
+        ->toContain('<FETCH>SYMBOL</FETCH>');
+});
+
 it('builds object export request with TYPE=Object, SUBTYPE, and BinaryXML', function () {
     $xml = TallyXmlBuilder::buildObjectExportRequest('Ledger', 'Cash', [], 'TestCompany');
 
@@ -119,7 +135,7 @@ it('builds cancel voucher request with attribute format', function () {
 
     expect($xml)
         ->toContain('DATE="16-Apr-2026"')
-        ->toContain('TAGNAME="Voucher Number"')
+        ->toContain('TAGNAME="VoucherNumber"')
         ->toContain('TAGVALUE="1"')
         ->toContain('VCHTYPE="Sales"')
         ->toContain('ACTION="Cancel"')

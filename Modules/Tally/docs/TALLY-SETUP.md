@@ -146,6 +146,24 @@ You must also:
 
 ---
 
+## 6b. Creating a dedicated demo company (strongly recommended)
+
+If you plan to run the smoke test (`Modules/Tally/scripts/tally-smoke-test.sh`) — or any exploratory integration work — **create a separate company** so no production data can ever be touched by accident.
+
+1. Gateway of Tally → **Alt+F3** → **Create Company**
+2. Company Name: **`SwatTech Demo`** (the smoke test defaults to this exact name; case-sensitive)
+3. Accept defaults for the rest (financial year, base currency, etc.)
+4. Gateway of Tally → **F1 (Select Company)** → `SwatTech Demo`
+
+You can have multiple companies loaded simultaneously; the integration pins every request to one via `<SVCURRENTCOMPANY>` in the XML envelope, so only the targeted company's data is ever read or written.
+
+**Why this matters:**
+- The Tally XML API has no per-company access control — whatever is loaded is reachable.
+- Defence in depth: the smoke test's `-DEMO-` naming prefix + the company pin = two independent safety barriers.
+- The smoke test's preflight aborts loudly if `SwatTech Demo` (or your chosen target) isn't loaded — it never silently falls back.
+
+To target a different name: pass `--company="Your Company"` to the smoke test, or set `TALLY_COMPANY` in `.env` / `Modules/Tally/scripts/.smoke.env`.
+
 ## 7. Smoke test from the Laravel side
 
 After TallyPrime is configured:

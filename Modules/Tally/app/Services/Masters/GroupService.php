@@ -4,6 +4,7 @@ namespace Modules\Tally\Services\Masters;
 
 use Modules\Tally\Services\AuditLogger;
 use Modules\Tally\Services\Concerns\CachesMasterData;
+use Modules\Tally\Services\Fields\TallyFieldRegistry;
 use Modules\Tally\Services\TallyHttpClient;
 use Modules\Tally\Services\TallyXmlBuilder;
 use Modules\Tally\Services\TallyXmlParser;
@@ -28,11 +29,18 @@ class GroupService
 
     public function get(string $name): ?array
     {
+        // Object export of <SUBTYPE>Group</SUBTYPE> hangs in TallyPrime (30s timeout reproduced
+        // 2026-04-18 on `[DEMO] Software Customers`). Filter from the cached collection list
+        // instead — same data, served from cache after the first call.
         return $this->cachedGet("group:{$name}", function () use ($name) {
-            $xml = TallyXmlBuilder::buildObjectExportRequest('Group', $name);
-            $response = $this->client->sendXml($xml);
+            foreach ($this->list() as $row) {
+                $rowName = $row['@attributes']['NAME'] ?? ($row['NAME']['#text'] ?? $row['NAME'] ?? null);
+                if ($rowName !== null && strcasecmp((string) $rowName, $name) === 0) {
+                    return $row;
+                }
+            }
 
-            return TallyXmlParser::extractObject($response, 'GROUP');
+            return null;
         });
     }
 
@@ -41,6 +49,7 @@ class GroupService
      */
     public function create(array $data): array
     {
+        $data = TallyFieldRegistry::canonicalize(TallyFieldRegistry::GROUP, $data);
         $xml = TallyXmlBuilder::buildImportMasterRequest('GROUP', $data, 'Create');
         $response = $this->client->sendXml($xml);
         $result = TallyXmlParser::parseImportResult($response);
@@ -55,6 +64,7 @@ class GroupService
 
     public function update(string $name, array $data): array
     {
+        $data = TallyFieldRegistry::canonicalize(TallyFieldRegistry::GROUP, $data);
         $data['NAME'] = $name;
         $xml = TallyXmlBuilder::buildImportMasterRequest('GROUP', $data, 'Alter');
         $response = $this->client->sendXml($xml);

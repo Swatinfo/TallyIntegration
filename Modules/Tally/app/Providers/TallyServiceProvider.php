@@ -3,10 +3,12 @@
 namespace Modules\Tally\Providers;
 
 use Illuminate\Console\Scheduling\Schedule;
+use Modules\Tally\Console\TallyDemoCommand;
 use Modules\Tally\Console\TallyHealthCommand;
 use Modules\Tally\Console\TallySyncCommand;
 use Modules\Tally\Jobs\HealthCheckJob;
 use Modules\Tally\Jobs\ProcessConflictsJob;
+use Modules\Tally\Jobs\ProcessRecurringVouchersJob;
 use Modules\Tally\Jobs\SyncAllConnectionsJob;
 use Modules\Tally\Jobs\SyncFromTallyJob;
 use Modules\Tally\Jobs\SyncToTallyJob;
@@ -29,6 +31,7 @@ class TallyServiceProvider extends ModuleServiceProvider
     protected array $commands = [
         TallyHealthCommand::class,
         TallySyncCommand::class,
+        TallyDemoCommand::class,
     ];
 
     public function register(): void
@@ -58,6 +61,9 @@ class TallyServiceProvider extends ModuleServiceProvider
                 ProcessConflictsJob::dispatch($conn->code);
             });
         })->everyFiveMinutes();
+
+        // Phase 9L — recurring vouchers: daily at 00:30 local time
+        $schedule->job(new ProcessRecurringVouchersJob)->dailyAt('00:30');
     }
 
     public function boot(): void

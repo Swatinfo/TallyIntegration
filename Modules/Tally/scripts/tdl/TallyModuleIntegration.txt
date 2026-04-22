@@ -1,0 +1,205 @@
+;; ============================================================================
+;;  TallyModuleIntegration.txt
+;; ----------------------------------------------------------------------------
+;;  Tally-side TDL companion for the Laravel Tally module.
+;;
+;;  Provides two capabilities that the pure HTTP/XML API cannot deliver
+;;  reliably on large or high-latency Tally instances:
+;;
+;;    (1) WebStatus UDFs — declares custom fields on masters and vouchers so
+;;        the module can stamp "Synced to ERP" state directly on the Tally
+;;        record. An operator can open any ledger/voucher and see the sync
+;;        state inline. Also enables the Exception Report in the host module.
+;;
+;;    (2) Tally-push bulk sync — exposes a menu item "Send to Module" that
+;;        walks every not-yet-synced master/voucher and POSTs it to the
+;;        Laravel module as JSON, sidestepping the 30-second Collection export
+;;        timeout on large data sets (List of Ledgers with 50k+ rows, etc.).
+;;
+;;  HOW TO INSTALL
+;;  --------------
+;;    1. Copy this file to the TallyPrime folder on the Tally host
+;;       (default  C:\Program Files\TallyPrime\TDL\ ).
+;;    2. Open TallyPrime → F1 → Help → Settings → TDL Management → Manage TDL.
+;;       Add this file. Restart TallyPrime if prompted.
+;;    3. Configure the module endpoint URL and auth token via the prompted
+;;       dialog the first time the menu entry is used (stored in
+;;       AutoSettings.txt under the TallyPrime install dir).
+;;
+;;  STATUS
+;;  ------
+;;    This is a STARTER TEMPLATE. The core WebStatus UDFs and menu
+;;    scaffolding are wired; per-entity SEND functions mirror the layout of
+;;    laxmantandon/tally_migration_tdl/send/*.txt and should be filled in
+;;    for each master/voucher your deployment cares about.
+;;
+;;    The Laravel side already exposes:
+;;      POST /api/tally/connections/{id}/import/{entity}     (master import)
+;;      POST /api/tally/{conn}/vouchers                      (single voucher)
+;;      POST /api/tally/{conn}/vouchers/batch                (batch vouchers)
+;;    so the HTTP targets in each SEND function below point at those.
+;; ============================================================================
+
+
+;; --- UDF numeric IDs ---------------------------------------------------------
+;; UDF numbers must be unique across all installed TDLs on the same Tally.
+;; Start at 19000 to stay clear of Tally core (0-10000) and common third-party
+;; integrations (tally_migration_tdl uses 11000-12000).
+
+[System: UDF]
+    WebStatus        : String : 19001
+    WebStatus_Message: String : 19002
+    WebStatus_DocName: String : 19003
+
+
+;; --- Attach the UDFs to every master / voucher we care about ---------------
+
+[#Object: Ledger]
+    Add: Storage: WebStatus, WebStatus_Message, WebStatus_DocName
+
+[#Object: Group]
+    Add: Storage: WebStatus, WebStatus_Message, WebStatus_DocName
+
+[#Object: Stock Item]
+    Add: Storage: WebStatus, WebStatus_Message, WebStatus_DocName
+
+[#Object: Stock Group]
+    Add: Storage: WebStatus, WebStatus_Message, WebStatus_DocName
+
+[#Object: Stock Category]
+    Add: Storage: WebStatus, WebStatus_Message, WebStatus_DocName
+
+[#Object: Cost Centre]
+    Add: Storage: WebStatus, WebStatus_Message, WebStatus_DocName
+
+[#Object: Godown]
+    Add: Storage: WebStatus, WebStatus_Message, WebStatus_DocName
+
+[#Object: Unit]
+    Add: Storage: WebStatus, WebStatus_Message, WebStatus_DocName
+
+[#Object: Voucher Type]
+    Add: Storage: WebStatus, WebStatus_Message, WebStatus_DocName
+
+[#Object: Voucher]
+    Add: Storage: WebStatus, WebStatus_Message, WebStatus_DocName
+
+
+;; --- Gateway-of-Tally menu entry -------------------------------------------
+
+[#Menu: Gateway of Tally]
+    Add: Key Item: Send to Module : M : Menu : Tally Module Integration : Not $$IsEmpty:$$SelectedCmps
+
+
+[Menu: Tally Module Integration]
+    Add: Key Item: Send Pending Masters   : M : Call : SendAllPendingMasters
+    Add: Key Item: Send Pending Vouchers  : V : Call : SendAllPendingVouchers
+    Add: Key Item: Reset WebStatus        : R : Call : ResetWebStatusMarkers
+    Add: Key Item: Exception Report       : E : Display : ModuleExceptionReport
+
+
+;; --- System variables that hold the module endpoint + auth token -----------
+;; These are populated once via the SetupModuleEndpoint form and persisted
+;; to AutoSettings.txt. The function stubs below reference them as @@.
+
+[System: Variable]
+    ModuleEndpointURL : ""
+    ModuleAuthToken   : ""
+    ModuleConnection  : ""
+
+
+;; --- Function stubs: fill in per entity per deployment ---------------------
+;; Each function walks a Tally collection filtered by WebStatus, POSTs each
+;; row as JSON to the Laravel endpoint, and stamps WebStatus on success.
+;; Pattern mirrors tally_migration_tdl/send/*.txt.
+
+[Function: SendAllPendingMasters]
+    Variable: CurrentIdx : Number : 0
+    Variable: TotalSent  : Number : 0
+
+    01: Start Progress : "Sending masters to module" : $$CollectionFieldByKey:$Name:1:PendingLedgers : Yes
+    02: Walk Collection : PendingLedgers
+    03: Increment: CurrentIdx
+    04: HTTP Post : @@ModuleEndpointURL+"/import/ledger" : "Content-Type:application/json" : "Authorization:Bearer "+@@ModuleAuthToken : $$CollectionToJSON:PendingLedgerRow
+    05: If : $$StatusCode = 200 OR $$StatusCode = 201
+    06:     Alter Object : Ledger : $Name : WebStatus = "Synced" : WebStatus_Message = "" : WebStatus_DocName = $$ValueOf:"id"
+    07:     Increment: TotalSent
+    08: Else
+    09:     Alter Object : Ledger : $Name : WebStatus = "Error" : WebStatus_Message = $$ResponseText
+    10: End If
+    11: End Walk
+    12: End Progress
+    13: Msg Box : "Sync complete" : "Sent "+$$String:##TotalSent+" masters."
+
+
+[Function: SendAllPendingVouchers]
+    ;; Same pattern, filtered by WebStatus != "Synced" and looped over
+    ;; SalesInvoice / PurchaseInvoice / Payment / Receipt / Journal / Contra.
+    ;; Targets: @@ModuleEndpointURL+"/vouchers/batch" (batches of 50 for throughput).
+
+[Function: ResetWebStatusMarkers]
+    Variable: Confirm : Logical : No
+    01: Display : ResetConfirmForm
+    02: If : ##Confirm
+    03:     For Each : Ledger : In : All Ledgers
+    04:         Alter Object : Ledger : $Name : WebStatus = "" : WebStatus_Message = ""
+    05:     End For
+    06:     ;; Repeat for Vouchers, Stock Items, etc.
+    07:     Msg Box : "Reset" : "All WebStatus markers cleared."
+    08: End If
+
+
+;; --- Exception Report: lists every row with WebStatus != "Synced" ----------
+
+[Report: ModuleExceptionReport]
+    Form : ModuleExceptionReport
+    Title: "Module — Exception Report"
+
+[Form: ModuleExceptionReport]
+    Part: ModuleExceptionPart
+
+[Part: ModuleExceptionPart]
+    Line: ModuleExceptionHeader, ModuleExceptionRow
+    Repeat: ModuleExceptionRow : AllExceptions
+    Scroll: Vertical
+    Common Border: Yes
+
+[Line: ModuleExceptionHeader]
+    Field: Exception EntityType, Exception Name, Exception Status, Exception Message
+    Border: Thin Top Bottom
+
+[Line: ModuleExceptionRow]
+    Field: Exception EntityType, Exception Name, Exception Status, Exception Message
+
+[Field: Exception EntityType] : Set as: "Ledger" : Width: 15 : Align: Left
+[Field: Exception Name]       : Set as: $Name    : Width: 40 : Align: Left
+[Field: Exception Status]     : Set as: $WebStatus : Width: 15 : Align: Left
+[Field: Exception Message]    : Set as: $WebStatus_Message : Width: 50 : Align: Left
+
+[Collection: AllExceptions]
+    Type: Ledger
+    Filter: HasException
+
+[System: Formula]
+    HasException: NOT $WebStatus = "Synced" AND NOT $WebStatus = ""
+
+
+;; --- Collections referenced above (stubs) ----------------------------------
+
+[Collection: PendingLedgers]
+    Type: Ledger
+    Fetch: Name, Parent, OpeningBalance, WebStatus, WebStatus_Message
+    Filter: IsPending
+
+[Collection: PendingVouchers]
+    Type: Voucher
+    Fetch: Date, VoucherNumber, VoucherTypeName, Narration, WebStatus
+    Filter: IsPending
+
+[System: Formula]
+    IsPending : $WebStatus = "" OR $WebStatus = "Pending" OR $WebStatus = "Error"
+
+
+;; ============================================================================
+;;  END TallyModuleIntegration.txt
+;; ============================================================================

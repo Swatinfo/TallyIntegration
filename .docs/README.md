@@ -10,8 +10,8 @@ Authoritative, source-derived references. Regenerate these after major refactors
 
 | File | Purpose |
 |------|---------|
-| [database-schema.md](../.claude/database-schema.md) | All 10 tables, columns, indexes, FKs |
-| [routes-reference.md](../.claude/routes-reference.md) | All 44 route registrations (40 named), controllers, middleware, permissions |
+| [database-schema.md](../.claude/database-schema.md) | All 17 tables, columns, indexes, FKs |
+| [routes-reference.md](../.claude/routes-reference.md) | All 165 route registrations (151 named), controllers, middleware, permissions |
 | [services-reference.md](../.claude/services-reference.md) | All services, methods, concerns, jobs, events, exceptions |
 
 ## Feature Documentation (.docs/)
@@ -23,7 +23,15 @@ Authoritative, source-derived references. Regenerate these after major refactors
 | [tally-api-reference.md](tally-api-reference.md) | TallyPrime XML API format — request/response examples, report IDs, amount signs |
 | [api-examples/](api-examples/README.md) | **Complete REST API examples** — curl + PHP for every operation (12 files) |
 | [product-roadmap.md](product-roadmap.md) | Planned work |
+| [features.md](features.md) | Deferred-phase implementation specs (9E Tax, 9I Integration) — full build briefs waiting on external decisions |
 | `Demo Samples/` | Official TallyPrime XML samples (canonical source-of-truth for XML format) |
+
+## Operational Scripts (scripts/)
+
+| File | Purpose |
+|------|---------|
+| [Modules/Tally/scripts/README.md](../Modules/Tally/scripts/README.md) | Overview of all operational scripts — **scripts live inside the module so they travel with it** |
+| `Modules/Tally/scripts/tally-smoke-test.sh` | End-to-end exercise of all 44 API endpoints with software-company demo data. Probes Tally health before every call. Logs to `storage/logs/tally/tally-DD-MM-YYYY.log` |
 
 ## Module Setup Guides (Modules/Tally/docs/)
 

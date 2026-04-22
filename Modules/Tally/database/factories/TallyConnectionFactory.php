@@ -27,6 +27,20 @@ class TallyConnectionFactory extends Factory
             'company_name' => fake()->company(),
             'timeout' => 30,
             'is_active' => true,
+            // Phase 9Z — hierarchy FKs default to null (backwards-compatible).
+            'tally_organization_id' => null,
+            'tally_company_id' => null,
+            'tally_branch_id' => null,
         ];
+    }
+
+    /** State: attach to a specific organization/company/branch hierarchy. */
+    public function inHierarchy(int $organizationId, ?int $companyId = null, ?int $branchId = null): static
+    {
+        return $this->state(fn () => [
+            'tally_organization_id' => $organizationId,
+            'tally_company_id' => $companyId,
+            'tally_branch_id' => $branchId,
+        ]);
     }
 }

@@ -2,6 +2,30 @@
 
 Goal: go from a fresh install to **creating a ledger and a sales voucher** in TallyPrime via the REST API.
 
+## Fastest path — 2 commands
+
+```bash
+# 1. Create "SwatTech Demo" in TallyPrime: File → Create Company → name it exactly "SwatTech Demo"
+# 2. Seed the sandbox (idempotent, safe to re-run):
+php artisan tally:demo seed
+```
+
+This creates the demo user (`demo@tally.test`), the `DEMO` connection row, prints a Sanctum token,
+and populates 14 ledgers, 4 stock items, 5 groups, and 18 vouchers (one per voucher type) inside
+`SwatTech Demo` in Tally. Then:
+
+```bash
+# Run full end-to-end test of every module capability:
+php artisan tally:demo test
+
+# Or hit every API endpoint via curl (uses the persisted token):
+./scripts/tally-smoke-test.sh
+```
+
+Read on for the manual step-by-step walkthrough if you prefer.
+
+---
+
 **Prerequisites:** you've completed [INSTALLATION-FRESH.md](INSTALLATION-FRESH.md) or [INSTALLATION-EXISTING.md](INSTALLATION-EXISTING.md), and [TALLY-SETUP.md](TALLY-SETUP.md). Laravel is running on `127.0.0.1:8000`. TallyPrime is reachable at `localhost:9000`. You have a Sanctum token.
 
 ```bash
@@ -242,6 +266,18 @@ curl "$BASE/audit-logs?action=create&object_type=VOUCHER" -H "Authorization: Bea
 7. Controller wrapped the result in `{ success, data, message }` and returned.
 
 ---
+
+## Shortcut — run the smoke test
+
+If you'd rather verify everything at once instead of stepping through manually:
+
+```bash
+bash Modules/Tally/scripts/tally-smoke-test.sh
+```
+
+Creates a user + token automatically, runs through every endpoint, logs to `storage/logs/tally/tally-DD-MM-YYYY.log`. See `Modules/Tally/scripts/README.md`.
+
+**One-time prerequisite:** create a dedicated Tally company named `SwatTech Demo` (Alt+F3 → Create Company). The smoke test refuses to run otherwise. Every request is pinned to that company — data in any other loaded company is never touched. Detail: [TALLY-SETUP.md § 6b](TALLY-SETUP.md).
 
 ## Next
 

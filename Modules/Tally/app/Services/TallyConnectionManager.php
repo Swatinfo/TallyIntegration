@@ -32,6 +32,7 @@ class TallyConnectionManager
             $connection->port,
             $connection->company_name,
             $connection->timeout,
+            $code,
         );
 
         return $this->clients[$code];
@@ -50,6 +51,7 @@ class TallyConnectionManager
                 $connection->port,
                 $connection->company_name,
                 $connection->timeout,
+                $code,
             );
         }
 

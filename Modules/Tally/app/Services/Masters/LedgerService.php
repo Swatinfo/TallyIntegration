@@ -4,6 +4,7 @@ namespace Modules\Tally\Services\Masters;
 
 use Modules\Tally\Services\AuditLogger;
 use Modules\Tally\Services\Concerns\CachesMasterData;
+use Modules\Tally\Services\Fields\TallyFieldRegistry;
 use Modules\Tally\Services\TallyHttpClient;
 use Modules\Tally\Services\TallyXmlBuilder;
 use Modules\Tally\Services\TallyXmlParser;
@@ -19,7 +20,9 @@ class LedgerService
     public function list(): array
     {
         return $this->cachedList('ledger:list', function () {
-            $xml = TallyXmlBuilder::buildCollectionExportRequest('List of Accounts');
+            // Tally's built-in collection is "List of Ledgers". An older name
+            // ("List of Accounts") yields TDL error: 'Could not find description'.
+            $xml = TallyXmlBuilder::buildCollectionExportRequest('List of Ledgers');
             $response = $this->client->sendXml($xml);
 
             return TallyXmlParser::extractCollection($response, 'LEDGER');
@@ -28,16 +31,27 @@ class LedgerService
 
     public function get(string $name): ?array
     {
+        // Filter from cached list — Object exports have proven unreliable across
+        // master types in TallyPrime (hangs / crashes). The list is cached and
+        // shared with the index endpoint, so per-name lookups are O(n) on the
+        // first call then O(1) until invalidation. For very large ledger sets
+        // (10K+) consider switching to Object export with a connection-level
+        // health probe and short timeout.
         return $this->cachedGet("ledger:{$name}", function () use ($name) {
-            $xml = TallyXmlBuilder::buildObjectExportRequest('Ledger', $name);
-            $response = $this->client->sendXml($xml);
+            foreach ($this->list() as $row) {
+                $rowName = $row['@attributes']['NAME'] ?? ($row['NAME']['#text'] ?? $row['NAME'] ?? null);
+                if ($rowName !== null && strcasecmp((string) $rowName, $name) === 0) {
+                    return $row;
+                }
+            }
 
-            return TallyXmlParser::extractObject($response, 'LEDGER');
+            return null;
         });
     }
 
     public function create(array $data): array
     {
+        $data = TallyFieldRegistry::canonicalize(TallyFieldRegistry::LEDGER, $data);
         $xml = TallyXmlBuilder::buildImportMasterRequest('LEDGER', $data, 'Create');
         $response = $this->client->sendXml($xml);
         $result = TallyXmlParser::parseImportResult($response);
@@ -52,6 +66,7 @@ class LedgerService
 
     public function update(string $name, array $data): array
     {
+        $data = TallyFieldRegistry::canonicalize(TallyFieldRegistry::LEDGER, $data);
         $data['NAME'] = $name;
         $xml = TallyXmlBuilder::buildImportMasterRequest('LEDGER', $data, 'Alter');
         $response = $this->client->sendXml($xml);

@@ -2,6 +2,7 @@
 
 namespace Modules\Tally\Services\Vouchers;
 
+use Modules\Tally\Services\Fields\TallyFieldRegistry;
 use Modules\Tally\Services\TallyHttpClient;
 use Modules\Tally\Services\TallyXmlBuilder;
 use Modules\Tally\Services\TallyXmlParser;
@@ -101,7 +102,9 @@ class VoucherService
      */
     public function create(VoucherType $type, array $data): array
     {
+        $data = TallyFieldRegistry::canonicalize(TallyFieldRegistry::VOUCHER, $data);
         $data['VOUCHERTYPENAME'] = $type->value;
+        $data = self::applyInvoiceMode($data);
         $xml = TallyXmlBuilder::buildImportVoucherRequest($data, 'Create');
         $response = $this->client->sendXml($xml);
 
@@ -116,7 +119,9 @@ class VoucherService
     public function createBatch(VoucherType $type, array $vouchers): array
     {
         foreach ($vouchers as &$data) {
+            $data = TallyFieldRegistry::canonicalize(TallyFieldRegistry::VOUCHER, $data);
             $data['VOUCHERTYPENAME'] = $type->value;
+            $data = self::applyInvoiceMode($data);
         }
         unset($data);
 
@@ -131,12 +136,35 @@ class VoucherService
      */
     public function alter(string $masterID, VoucherType $type, array $data): array
     {
+        $data = TallyFieldRegistry::canonicalize(TallyFieldRegistry::VOUCHER, $data);
         $data['VOUCHERTYPENAME'] = $type->value;
         $data['MASTERID'] = $masterID;
+        $data = self::applyInvoiceMode($data);
         $xml = TallyXmlBuilder::buildImportVoucherRequest($data, 'Alter');
         $response = $this->client->sendXml($xml);
 
         return TallyXmlParser::parseImportResult($response);
+    }
+
+    /**
+     * Auto-fill invoice-mode metadata when ISINVOICE=Yes.
+     *
+     * Per Tally sample-xml docs (Sample 11 — Sales Voucher Invoice Mode), an
+     * invoice-mode voucher needs PERSISTEDVIEW + OBJVIEW set to "Invoice Voucher
+     * View". Voucher-mode entries leave them off (or use "Accounting Voucher View").
+     * Caller-supplied values are NEVER overwritten — this only fills sensible
+     * defaults so clients can opt into invoice mode by setting ISINVOICE alone.
+     */
+    private static function applyInvoiceMode(array $data): array
+    {
+        $isInvoice = strtoupper((string) ($data['ISINVOICE'] ?? 'No')) === 'YES';
+
+        if ($isInvoice) {
+            $data['PERSISTEDVIEW'] = $data['PERSISTEDVIEW'] ?? 'Invoice Voucher View';
+            $data['OBJVIEW'] = $data['OBJVIEW'] ?? 'Invoice Voucher View';
+        }
+
+        return $data;
     }
 
     /**
@@ -391,5 +419,113 @@ class VoucherService
         }
 
         return $this->create(VoucherType::Journal, $data);
+    }
+
+    // --------------------------------------------------------------------
+    // Phase 9F — inventory convenience helpers
+    // --------------------------------------------------------------------
+
+    /**
+     * Transfer stock between godowns using a Stock Journal voucher.
+     * Tally represents this as two inventory entries: one consumption (negative)
+     * from the source godown, one destination (positive) at the target godown.
+     */
+    public function createStockTransfer(
+        string $date,
+        string $fromGodown,
+        string $toGodown,
+        string $stockItem,
+        float $quantity,
+        ?string $unit = 'Nos',
+        ?float $rate = null,
+        ?string $voucherNumber = null,
+        ?string $narration = null,
+    ): array {
+        $rateStr = $rate !== null ? "{$rate}/{$unit}" : null;
+        $amount = $rate !== null ? round($rate * $quantity, 2) : 0.0;
+
+        $data = [
+            'DATE' => $date,
+            'NARRATION' => $narration ?? "Stock transfer {$fromGodown} → {$toGodown}",
+            'ALLINVENTORYENTRIES.LIST' => [
+                [
+                    'STOCKITEMNAME' => $stockItem,
+                    'ACTUALQTY' => "-{$quantity} {$unit}",
+                    'BILLEDQTY' => "-{$quantity} {$unit}",
+                    'RATE' => $rateStr ?? '',
+                    'AMOUNT' => $amount ? -$amount : '',
+                    'ISDEEMEDPOSITIVE' => 'Yes',
+                    'BATCHALLOCATIONS.LIST' => [
+                        [
+                            'GODOWNNAME' => $fromGodown,
+                            'BATCHNAME' => 'Primary Batch',
+                            'ACTUALQTY' => "-{$quantity} {$unit}",
+                            'BILLEDQTY' => "-{$quantity} {$unit}",
+                            'AMOUNT' => $amount ? -$amount : '',
+                        ],
+                    ],
+                ],
+                [
+                    'STOCKITEMNAME' => $stockItem,
+                    'ACTUALQTY' => "{$quantity} {$unit}",
+                    'BILLEDQTY' => "{$quantity} {$unit}",
+                    'RATE' => $rateStr ?? '',
+                    'AMOUNT' => $amount ?: '',
+                    'ISDEEMEDPOSITIVE' => 'No',
+                    'BATCHALLOCATIONS.LIST' => [
+                        [
+                            'GODOWNNAME' => $toGodown,
+                            'BATCHNAME' => 'Primary Batch',
+                            'ACTUALQTY' => "{$quantity} {$unit}",
+                            'BILLEDQTY' => "{$quantity} {$unit}",
+                            'AMOUNT' => $amount ?: '',
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        if ($voucherNumber !== null) {
+            $data['VOUCHERNUMBER'] = $voucherNumber;
+        }
+
+        return $this->create(VoucherType::StockJournal, $data);
+    }
+
+    /**
+     * Physical stock voucher — adjusts book stock to match an actual count.
+     */
+    public function createPhysicalStock(
+        string $date,
+        string $godown,
+        string $stockItem,
+        float $countedQuantity,
+        ?string $unit = 'Nos',
+        ?string $voucherNumber = null,
+        ?string $narration = null,
+    ): array {
+        $data = [
+            'DATE' => $date,
+            'NARRATION' => $narration ?? "Physical stock adjustment — {$stockItem} @ {$godown}",
+            'ALLINVENTORYENTRIES.LIST' => [
+                [
+                    'STOCKITEMNAME' => $stockItem,
+                    'ACTUALQTY' => "{$countedQuantity} {$unit}",
+                    'BATCHALLOCATIONS.LIST' => [
+                        [
+                            'GODOWNNAME' => $godown,
+                            'BATCHNAME' => 'Primary Batch',
+                            'ACTUALQTY' => "{$countedQuantity} {$unit}",
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        if ($voucherNumber !== null) {
+            $data['VOUCHERNUMBER'] = $voucherNumber;
+        }
+
+        return $this->create(VoucherType::PhysicalStock, $data);
     }
 }

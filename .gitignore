@@ -9,6 +9,7 @@ claude/settings.local.json
 .env.production
 .env.local
 .env.*.local
+Modules/Tally/scripts/.smoke.env
 .phpactor.json
 .phpunit.result.cache
 /.cursor/
@@ -41,6 +42,9 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Tally demo sandbox — persisted Sanctum token for local development
+/storage/app/tally-demo/
 
 # Build output (uncomment what applies)
 # /public/build

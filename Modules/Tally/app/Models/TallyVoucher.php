@@ -12,6 +12,7 @@ class TallyVoucher extends Model
         'voucher_number',
         'tally_master_id',
         'voucher_type',
+        'naming_series',
         'date',
         'party_name',
         'narration',

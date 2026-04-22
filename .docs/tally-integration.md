@@ -48,15 +48,16 @@ All keys are read by `Modules/Tally/config/config.php` and exposed as `config('t
 Modules/Tally/
 ├── app/
 │   ├── Console/                  # tally:health, tally:sync
-│   ├── Enums/                    # TallyPermission
-│   ├── Events/                   # 8 events (Dispatchable)
+│   ├── Enums/                    # TallyPermission (9 cases)
+│   ├── Events/                   # 8 events + 1 listener (DispatchWebhooksOnTallyEvent)
 │   ├── Exceptions/               # 5 custom exceptions
 │   ├── Http/
-│   │   ├── Controllers/          # 9 controllers
+│   │   ├── Controllers/          # ~31 controllers
 │   │   ├── Middleware/           # CheckTallyPermission, ResolveTallyConnection
-│   │   └── Requests/             # 9 Form Requests + SafeXmlString rule usage
-│   ├── Jobs/                     # 7 queued jobs
-│   ├── Models/                   # 8 Eloquent models
+│   │   └── Requests/             # Form Requests (one per mutating controller) + SafeXmlString rule
+│   ├── Jobs/                     # 9 queued jobs
+│   ├── Listeners/                # DispatchWebhooksOnTallyEvent
+│   ├── Models/                   # 13 Eloquent models
 │   ├── Providers/                # Tally / Route / Event service providers
 │   ├── Rules/                    # SafeXmlString
 │   └── Services/
@@ -70,16 +71,22 @@ Modules/Tally/
 │       ├── MetricsCollector.php
 │       ├── CircuitBreaker.php
 │       ├── SyncTracker.php
-│       ├── Masters/              # 6 CRUD services
-│       ├── Vouchers/             # VoucherService + VoucherType enum
-│       ├── Reports/              # ReportService
-│       └── Concerns/             # CachesMasterData, PaginatesResults
+│       ├── WorkflowService.php       # Phase 9J — maker-checker state machine
+│       ├── RecurringVoucherService.php # Phase 9L
+│       ├── Masters/                 # 11 CRUD services (Ledger/Group/StockItem/StockGroup/Unit/CostCentre/Currency/Godown/VoucherType/StockCategory/PriceList)
+│       ├── Vouchers/                # VoucherService + VoucherType enum (20 cases)
+│       ├── Reports/                 # ReportService (18 report types)
+│       ├── Banking/                 # Phase 9D — BankingService
+│       ├── Manufacturing/           # Phase 9G — ManufacturingService
+│       ├── Consolidation/           # Phase 9K — ConsolidationService
+│       ├── Integration/             # Phase 9I — Pdf/Mail/Attachment/Import/WebhookDispatcher
+│       └── Concerns/                # CachesMasterData, PaginatesResults
 ├── config/config.php             # published as config('tally.*')
 ├── database/
 │   ├── factories/                # TallyConnectionFactory
-│   └── migrations/               # 10 migrations
+│   └── migrations/               # 20 migrations (17 tables)
 ├── docs/                         # module setup guides (see list above)
-├── routes/api.php                # 44 route registrations under /api/tally/
+├── routes/api.php                # 165 route registrations under /api/tally/
 └── module.json                   # nwidart manifest
 ```
 
@@ -125,17 +132,48 @@ See `.claude/services-reference.md` for full method signatures. High level:
 
 ### Master services (all share the same shape)
 
-`LedgerService`, `GroupService`, `StockItemService`, `StockGroupService`, `UnitService`, `CostCenterService`.
+11 services: `LedgerService`, `GroupService`, `StockItemService`, `StockGroupService`, `UnitService`, `CostCenterService`, `CurrencyService`, `GodownService`, `VoucherTypeService`, `StockCategoryService`, `PriceListService`.
 Each exposes `list()`, `get($name)`, `create($data)`, `update($name, $data)`, `delete($name)`.
 All use the `CachesMasterData` trait and emit `TallyMaster*` events.
 
 ### Voucher service
 
-`VoucherService` covers every voucher type via the `VoucherType` enum: `Sales`, `Purchase`, `Payment`, `Receipt`, `Journal`, `Contra`, `CreditNote`, `DebitNote`. Helpers: `createSales/createPurchase/createPayment/createReceipt/createJournal`. Batch + cancel + delete supported.
+`VoucherService` covers every voucher type via the `VoucherType` enum (20 cases):
+
+| Group | Cases |
+|---|---|
+| Core accounting | `Sales`, `Purchase`, `Payment`, `Receipt`, `Journal`, `Contra`, `CreditNote`, `DebitNote` |
+| Order processing & dispatch (Phase 9F) | `SalesOrder`, `PurchaseOrder`, `Quotation`, `DeliveryNote`, `ReceiptNote`, `RejectionIn`, `RejectionOut`, `StockJournal`, `PhysicalStock` |
+| Manufacturing (Phase 9G) | `ManufacturingJournal`, `JobWorkInOrder`, `JobWorkOutOrder` |
+
+Helpers: `createSales/createPurchase/createPayment/createReceipt/createJournal/createStockTransfer/createPhysicalStock`. Batch + cancel + delete supported.
 
 ### Report service
 
-`ReportService::balanceSheet / profitAndLoss / trialBalance / ledgerReport / outstandings / stockSummary / dayBook`. Dates are `YYYYMMDD`.
+18 report types available via `GET /{conn}/reports/{type}`:
+
+| Group | Types |
+|---|---|
+| Core | `balance-sheet`, `profit-and-loss`, `trial-balance`, `ledger`, `outstandings`, `stock-summary`, `day-book` |
+| Management (Phase 9B) | `cash-book`, `sales-register`, `purchase-register`, `aging`, `cash-flow`, `funds-flow`, `receipts-payments`, `stock-movement` |
+| Banking (Phase 9D) | `bank-reconciliation`, `cheque-register`, `post-dated-cheques` |
+
+Dates are `YYYYMMDD`. Add `?format=csv` or `Accept: text/csv` for streaming CSV export.
+
+### Additional services (Phase 9D/9G/9I/9J/9K/9L)
+
+| Service | Role |
+|---|---|
+| `BankingService` | Reconciliation (ALTER voucher with `BANKERDATE`), cheque tracking, CSV bank feed parser, amount+date match |
+| `ManufacturingService` | BOM read/write, Manufacturing Journal assembly, Job Work In/Out |
+| `ConsolidationService` | Fans out a report across every active connection in a `TallyOrganization`; failure-tolerant |
+| `WorkflowService` | Draft voucher state machine (`draft → submitted → approved → pushed` / `→ rejected`) + auto-approval threshold |
+| `RecurringVoucherService` | Advances scheduled voucher templates; `fire()` injects `DATE` and dispatches via `VoucherService::create` |
+| `PdfService` | HTML → PDF via mpdf (A4 default, configurable) |
+| `MailService` | Voucher PDF attachment via Laravel Mail |
+| `AttachmentService` | Upload/download/delete voucher attachments on any configured disk |
+| `ImportService` | CSV bulk-import of masters (ledger/group/stock-item) |
+| `WebhookDispatcher` | HMAC-SHA256 signed POSTs with exponential backoff retry |
 
 ## Bidirectional Sync Engine
 
@@ -178,9 +216,39 @@ Resolve via `POST /api/tally/sync/{sync}/resolve { "strategy": "erp_wins" }`.
 ## Security
 
 - **Auth:** every route requires `auth:sanctum` (see CONFIGURATION.md).
-- **Permissions:** per-group `CheckTallyPermission` middleware reads `users.tally_permissions` (JSON). Values: `view_masters`, `manage_masters`, `view_vouchers`, `manage_vouchers`, `view_reports`, `manage_connections`.
-- **Rate limiting:** three throttle groups — `tally-api` (all), `tally-write` (master/voucher writes), `tally-reports` (reports).
+- **Permissions:** per-group `CheckTallyPermission` middleware reads `users.tally_permissions` (JSON). 9 values available: `view_masters`, `manage_masters`, `view_vouchers`, `manage_vouchers`, `view_reports`, `manage_connections`, `approve_vouchers` (9J), `manage_integrations` (9I), `send_invoices` (9I).
+- **Rate limiting:** three throttle groups — `tally-api` (all), `tally-write` (master/voucher writes), `tally-reports` (reports) — **tiered by Sanctum token name prefix**: `smoke-test-*` / `internal-*` / `system-*` → internal tier (6000/min writes), `batch-*` / `sync-*` → batch tier (600/min writes), anything else → standard tier (60/min writes). Additionally **keyed per connection** for routes under `/{connection}/*` so one busy Tally instance does not share a bucket with others. Full table in `Modules/Tally/docs/CONFIGURATION.md`.
 - **Input safety:** `SafeXmlString` rule rejects any field containing `<!DOCTYPE`, `<!ENTITY`, `<![CDATA[`, `<?xml`, or Tally envelope tags. All user input is escaped via `TallyXmlBuilder::escapeXml()` before hitting the wire.
+
+## MNC hierarchy (Phase 9Z) + Consolidation (Phase 9K)
+
+Three new tables layered above `tally_connections`:
+
+- **`tally_organizations`** — top-level MNC / group entity (e.g. "Acme Group")
+- **`tally_companies`** — legal entity within a group (e.g. "Acme India Pvt Ltd", "Acme UK Ltd")
+- **`tally_branches`** — optional location under a company
+
+`tally_connections` carries three new nullable FK columns so existing rows continue to work without a hierarchy. New connections can opt in.
+
+`ConsolidationService` + `ConsolidatedReportController` fan out Balance Sheet / P&L / Trial Balance across every active connection in an organization and return a packaged envelope with per-connection breakdown. A single failing connection is captured in the breakdown without aborting the whole rollup.
+
+## Workflow (Phase 9J)
+
+Draft vouchers live in the module's DB until approved, then get pushed to Tally. State machine: `draft → submitted → approved → pushed` or `→ rejected`. Thresholds in `config('tally.workflow.approval_thresholds')` decide which submissions auto-approve vs require a checker. Self-approval is blocked by default via `require_distinct_approver`.
+
+## Recurring vouchers (Phase 9L)
+
+`tally_recurring_vouchers` holds scheduled voucher templates (daily / weekly / monthly / quarterly / yearly). `ProcessRecurringVouchersJob` runs daily at **00:30** via the module's scheduler, fires each due template via `VoucherService::create`, and advances `next_run_at`.
+
+## Integration glue (Phase 9I)
+
+- **Webhooks** — outbound POST with HMAC-SHA256 signature on every Tally event; 5-attempt exponential backoff (`60s, 5m, 15m, 1h, 4h`)
+- **CSV master imports** — `POST /connections/{id}/import/{entity}` queues a `ProcessImportJob`; track progress via `GET /import-jobs/{id}`
+- **Voucher attachments** — store supporting files (PDFs, scans) on any configured Laravel disk (local / S3 / GCS)
+- **PDF invoices** — mpdf-powered; `GET /{conn}/vouchers/{id}/pdf`
+- **Email voucher** — `POST /{conn}/vouchers/{id}/email` attaches the PDF and sends via the configured mailer
+
+## Observability
 
 ## Observability
 
@@ -191,6 +259,9 @@ Resolve via `POST /api/tally/sync/{sync}/resolve { "strategy": "erp_wins" }`.
 | `MetricsCollector` → `tally_response_metrics` | Per-endpoint response time + status |
 | `/connections/{id}/health` | On-demand health + company list |
 | `/connections/{id}/metrics` | Aggregated stats over `1h` / `24h` / `7d` |
+| `/connections/{id}/circuit-state` | Breaker state + availability (Phase 9C) |
+| `/{conn}/stats`, `/{conn}/search`, `/{conn}/cache/flush` | Dashboard counts, cross-master search, cache invalidation (Phase 9C) |
+| `/audit-logs/{id}`, `/audit-logs/export` | Single-record detail + CSV export (Phase 9C) |
 | `CircuitBreaker` | Opens after 5 failures, auto-probes after 60s |
 
 ## Usage examples

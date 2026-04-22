@@ -20,6 +20,7 @@ class StockItemController extends Controller
     public function index(Request $request): JsonResponse
     {
         $items = $this->service->list();
+        $items = $this->filterByField($items, 'PARENT', $request->query('parent'));
         $paginated = $this->paginate($items, $request);
 
         return response()->json([
@@ -30,7 +31,7 @@ class StockItemController extends Controller
         ]);
     }
 
-    public function show(string $name): JsonResponse
+    public function show(string $connection, string $name): JsonResponse
     {
         $item = $this->service->get(urldecode($name));
 
@@ -52,7 +53,7 @@ class StockItemController extends Controller
         ], $result['errors'] === 0 ? 201 : 422);
     }
 
-    public function update(Request $request, string $name): JsonResponse
+    public function update(Request $request, string $connection, string $name): JsonResponse
     {
         $result = $this->service->update(urldecode($name), $request->all());
 
@@ -63,7 +64,7 @@ class StockItemController extends Controller
         ]);
     }
 
-    public function destroy(string $name): JsonResponse
+    public function destroy(string $connection, string $name): JsonResponse
     {
         $result = $this->service->delete(urldecode($name));
 

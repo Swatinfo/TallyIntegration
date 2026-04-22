@@ -14,7 +14,7 @@ class TallyXmlBuilder
         array $filters = [],
         ?string $company = null,
     ): string {
-        $company = $company ?? config('tally.company');
+        $company = $company ?? self::resolveDefaultCompany();
 
         $xml = '<ENVELOPE>';
         $xml .= '<HEADER>';
@@ -57,14 +57,19 @@ class TallyXmlBuilder
     /**
      * Build a collection export request (list of ledgers, stock items, groups, etc.)
      * Uses TYPE=Collection with collection name as ID.
+     *
+     * Pass $explode=false for collections that reference other rows recursively
+     * (e.g. `List of Units` with compound units) — otherwise TallyPrime can
+     * segfault while inlining the referenced objects.
      */
     public static function buildCollectionExportRequest(
         string $collectionType,
         array $fetchFields = [],
         array $filters = [],
         ?string $company = null,
+        bool $explode = true,
     ): string {
-        $company = $company ?? config('tally.company');
+        $company = $company ?? self::resolveDefaultCompany();
 
         $xml = '<ENVELOPE>';
         $xml .= '<HEADER>';
@@ -76,7 +81,7 @@ class TallyXmlBuilder
         $xml .= '<BODY>';
         $xml .= '<DESC>';
         $xml .= '<STATICVARIABLES>';
-        $xml .= '<EXPLODEFLAG>Yes</EXPLODEFLAG>';
+        $xml .= '<EXPLODEFLAG>'.($explode ? 'Yes' : 'No').'</EXPLODEFLAG>';
         $xml .= '<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>';
 
         if ($company) {
@@ -105,6 +110,79 @@ class TallyXmlBuilder
     }
 
     /**
+     * Build a Collection export that defines the collection inline via TDL injection.
+     *
+     * Use this when Tally has no built-in collection for a master type — e.g.
+     * `List of Units` is NOT a built-in TallyPrime collection (TallyPrime returns
+     * `Error in TDL, 'Collection: List of Units' Could not find description` and
+     * blocks the HTTP responder behind a UI dialog). The inline `<TDL><TDLMESSAGE>`
+     * block defines an ad-hoc collection of the given Tally type, then the request
+     * exports it.
+     *
+     * @param  string  $collectionName  Arbitrary unique name; the request uses this as <ID>
+     * @param  string  $tallyType  Tally TDL object type — use the **concatenated**
+     *                             form for multi-word masters per production TDL
+     *                             integrations (laxmantandon/tally_migration_tdl
+     *                             `send/*.txt` uses `Type : StockItem`, `Type :
+     *                             StockGroup`). Object SUBTYPEs use spaces; TDL
+     *                             `<TYPE>` uses concatenated. Canonical values:
+     *                             `Unit`, `Currency`, `Godown`, `Ledger`, `Group`,
+     *                             `CostCentre`, `VoucherType`, `StockCategory`,
+     *                             `PriceLevel`, `StockItem`, `StockGroup`.
+     * @param  array<string>  $fetchFields  Fields to include (omit for all)
+     */
+    public static function buildAdHocCollectionExportRequest(
+        string $collectionName,
+        string $tallyType,
+        array $fetchFields = [],
+        ?string $company = null,
+    ): string {
+        $company = $company ?? self::resolveDefaultCompany();
+
+        // Per Tally docs Sample 16, inline <COLLECTION> definitions declare
+        // fields via one <NATIVEMETHOD> per field. The single comma-separated
+        // <FETCH> form crashes TallyPrime when one of the fields isn't a valid
+        // TDL method on the type (reproduced 2026-04-19 on Price Level with
+        // <FETCH>NAME, USEFORGROUPS</FETCH> — connection reset after 6s).
+        // NATIVEMETHOD is silently tolerated for unknown field names.
+        $methodTags = '';
+        foreach ($fetchFields as $field) {
+            $methodTags .= '<NATIVEMETHOD>'.self::escapeXml($field).'</NATIVEMETHOD>';
+        }
+
+        $xml = '<ENVELOPE>';
+        $xml .= '<HEADER>';
+        $xml .= '<VERSION>1</VERSION>';
+        $xml .= '<TALLYREQUEST>Export</TALLYREQUEST>';
+        $xml .= '<TYPE>Collection</TYPE>';
+        $xml .= '<ID>'.self::escapeXml($collectionName).'</ID>';
+        $xml .= '</HEADER>';
+        $xml .= '<BODY>';
+        $xml .= '<DESC>';
+        $xml .= '<STATICVARIABLES>';
+        $xml .= '<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>';
+
+        if ($company) {
+            $xml .= '<SVCURRENTCOMPANY>'.self::escapeXml($company).'</SVCURRENTCOMPANY>';
+        }
+
+        $xml .= '</STATICVARIABLES>';
+        $xml .= '<TDL>';
+        $xml .= '<TDLMESSAGE>';
+        $xml .= '<COLLECTION NAME="'.self::escapeXml($collectionName).'" ISMODIFY="No">';
+        $xml .= '<TYPE>'.self::escapeXml($tallyType).'</TYPE>';
+        $xml .= $methodTags;
+        $xml .= '</COLLECTION>';
+        $xml .= '</TDLMESSAGE>';
+        $xml .= '</TDL>';
+        $xml .= '</DESC>';
+        $xml .= '</BODY>';
+        $xml .= '</ENVELOPE>';
+
+        return $xml;
+    }
+
+    /**
      * Build a single-object export request (e.g., get one Ledger by name).
      * Uses TYPE=Object with SUBTYPE. Per official samples, uses BinaryXML format.
      */
@@ -114,7 +192,7 @@ class TallyXmlBuilder
         array $fetchFields = [],
         ?string $company = null,
     ): string {
-        $company = $company ?? config('tally.company');
+        $company = $company ?? self::resolveDefaultCompany();
 
         $xml = '<ENVELOPE>';
         $xml .= '<HEADER>';
@@ -127,7 +205,7 @@ class TallyXmlBuilder
         $xml .= '<BODY>';
         $xml .= '<DESC>';
         $xml .= '<STATICVARIABLES>';
-        $xml .= '<SVEXPORTFORMAT>BinaryXML</SVEXPORTFORMAT>';
+        $xml .= '<SVEXPORTFORMAT>'.self::resolveObjectExportFormat().'</SVEXPORTFORMAT>';
 
         if ($company) {
             $xml .= '<SVCURRENTCOMPANY>'.self::escapeXml($company).'</SVCURRENTCOMPANY>';
@@ -151,6 +229,54 @@ class TallyXmlBuilder
     }
 
     /**
+     * Resolve the export format for Object-type exports. Defaults to the
+     * BinaryXML per Demo Samples; admins can flip to $$SysName:XML via
+     * TALLY_OBJECT_EXPORT_FORMAT=SysName when BinaryXML crashes Tally
+     * mid-response on specific subtypes.
+     */
+    /**
+     * Resolve which company to pin via <SVCURRENTCOMPANY>.
+     *
+     * Per-connection requests have a request-scoped TallyHttpClient rebound
+     * in the container by ResolveTallyConnection middleware — its company is
+     * the correct pin (one Tally can host several). Out-of-request callers
+     * and unit tests fall back to the module config default.
+     *
+     * Callers that intentionally want to suppress the pin (e.g. the global
+     * List-of-Companies export) should pass company: '' — that short-circuits
+     * this resolver entirely because '' !== null.
+     */
+    private static function resolveDefaultCompany(): string
+    {
+        try {
+            $client = app(TallyHttpClient::class);
+            $company = $client->getCompany();
+            if ($company !== '') {
+                return $company;
+            }
+        } catch (\Throwable) {
+            // No app container (unit test) or no client bound — fall through.
+        }
+
+        try {
+            return (string) config('tally.company', '');
+        } catch (\Throwable) {
+            return '';
+        }
+    }
+
+    private static function resolveObjectExportFormat(): string
+    {
+        try {
+            $format = config('tally.object_export_format', 'BinaryXML');
+        } catch (\Throwable) {
+            $format = 'BinaryXML';
+        }
+
+        return strcasecmp((string) $format, 'SysName') === 0 ? '$$SysName:XML' : 'BinaryXML';
+    }
+
+    /**
      * Build an import request for creating/altering master objects.
      * Matches official format: Import > Data > ID in header.
      */
@@ -160,7 +286,7 @@ class TallyXmlBuilder
         string $action = 'Create',
         ?string $company = null,
     ): string {
-        $company = $company ?? config('tally.company');
+        $company = $company ?? self::resolveDefaultCompany();
 
         $xml = '<ENVELOPE>';
         $xml .= '<HEADER>';
@@ -193,6 +319,83 @@ class TallyXmlBuilder
     }
 
     /**
+     * Inject WebStatus UDF markers into master/voucher data.
+     *
+     * Pattern borrowed from laxmantandon/tally_migration_tdl — masters/vouchers
+     * synced from an external system carry three UDFs (`WebStatus`, `WebStatus_Message`,
+     * `WebStatus_DocName`) so the accountant can see sync state inside Tally itself,
+     * and an Exception Report TDL can surface everything that didn't sync cleanly.
+     *
+     * The companion TDL file `Modules/Tally/scripts/tdl/TallyModuleIntegration.txt`
+     * declares these UDFs in Tally; without it the UDF tags are silently ignored,
+     * so sending them is safe even without the TDL installed.
+     *
+     * @param  array<string, mixed>  $data  Master/voucher payload to augment.
+     * @return array<string, mixed> The same array with UDF children appended.
+     */
+    public static function withWebStatus(array $data, string $status, ?string $message = null, ?string $docName = null): array
+    {
+        $data['UDF:WEBSTATUS.LIST'] = ['UDF:WEBSTATUS' => $status];
+        if ($message !== null) {
+            $data['UDF:WEBSTATUS_MESSAGE.LIST'] = ['UDF:WEBSTATUS_MESSAGE' => $message];
+        }
+        if ($docName !== null) {
+            $data['UDF:WEBSTATUS_DOCNAME.LIST'] = ['UDF:WEBSTATUS_DOCNAME' => $docName];
+        }
+
+        return $data;
+    }
+
+    /**
+     * Build an ALTER request against the Company master.
+     *
+     * Used for data that lives on the Company object rather than as a standalone
+     * master — e.g. Price Level names (Company.PRICELEVELLIST), which Tally does
+     * not expose as a separately-importable PRICELEVEL master. Two independent
+     * reference integrations (laxmantandon/express_tally, aadil-sengupta/Tally.Py)
+     * both skip price levels for this reason.
+     *
+     * @param  array<string, mixed>  $companyData  The sub-fields to alter; NAME is injected.
+     */
+    public static function buildCompanyAlterRequest(
+        string $companyName,
+        array $companyData,
+        ?string $company = null,
+    ): string {
+        $company = $company ?? self::resolveDefaultCompany();
+        $companyData = array_merge(['NAME' => $companyName], $companyData);
+
+        $xml = '<ENVELOPE>';
+        $xml .= '<HEADER>';
+        $xml .= '<VERSION>1</VERSION>';
+        $xml .= '<TALLYREQUEST>Import</TALLYREQUEST>';
+        $xml .= '<TYPE>Data</TYPE>';
+        $xml .= '<ID>All Masters</ID>';
+        $xml .= '</HEADER>';
+        $xml .= '<BODY>';
+        $xml .= '<DESC>';
+        $xml .= '<STATICVARIABLES>';
+
+        if ($company) {
+            $xml .= '<SVCURRENTCOMPANY>'.self::escapeXml($company).'</SVCURRENTCOMPANY>';
+        }
+
+        $xml .= '</STATICVARIABLES>';
+        $xml .= '</DESC>';
+        $xml .= '<DATA>';
+        $xml .= '<TALLYMESSAGE xmlns:UDF="TallyUDF">';
+        $xml .= '<COMPANY NAME="'.self::escapeXml($companyName).'" ACTION="Alter">';
+        $xml .= self::arrayToXml($companyData);
+        $xml .= '</COMPANY>';
+        $xml .= '</TALLYMESSAGE>';
+        $xml .= '</DATA>';
+        $xml .= '</BODY>';
+        $xml .= '</ENVELOPE>';
+
+        return $xml;
+    }
+
+    /**
      * Build an import request for creating/altering a single voucher.
      */
     public static function buildImportVoucherRequest(
@@ -213,7 +416,7 @@ class TallyXmlBuilder
         string $action = 'Create',
         ?string $company = null,
     ): string {
-        $company = $company ?? config('tally.company');
+        $company = $company ?? self::resolveDefaultCompany();
 
         $xml = '<ENVELOPE>';
         $xml .= '<HEADER>';
@@ -266,7 +469,7 @@ class TallyXmlBuilder
         ?string $narration = null,
         ?string $company = null,
     ): string {
-        $company = $company ?? config('tally.company');
+        $company = $company ?? self::resolveDefaultCompany();
 
         $xml = '<ENVELOPE>';
         $xml .= '<HEADER>';
@@ -288,7 +491,9 @@ class TallyXmlBuilder
         $xml .= '<DATA>';
         $xml .= '<TALLYMESSAGE>';
         $xml .= '<VOUCHER DATE="'.self::escapeXml($date).'"';
-        $xml .= ' TAGNAME="Voucher Number"';
+        // Cancel uses compressed `VoucherNumber` per the canonical Tally sample-xml
+        // page (Sample 13). Alter/Delete keep the spaced `Voucher Number` form.
+        $xml .= ' TAGNAME="VoucherNumber"';
         $xml .= ' TAGVALUE="'.self::escapeXml($voucherNumber).'"';
         $xml .= ' VCHTYPE="'.self::escapeXml($voucherType).'"';
         $xml .= ' ACTION="Cancel">';
@@ -316,7 +521,7 @@ class TallyXmlBuilder
         string $voucherType,
         ?string $company = null,
     ): string {
-        $company = $company ?? config('tally.company');
+        $company = $company ?? self::resolveDefaultCompany();
 
         $xml = '<ENVELOPE>';
         $xml .= '<HEADER>';
@@ -390,7 +595,7 @@ class TallyXmlBuilder
      */
     public static function buildAlterIdQueryRequest(?string $company = null): string
     {
-        $company = $company ?? config('tally.company');
+        $company = $company ?? self::resolveDefaultCompany();
 
         $xml = '<?xml version="1.0" encoding="utf-8"?>';
         $xml .= '<ENVELOPE>';

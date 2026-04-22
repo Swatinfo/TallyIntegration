@@ -43,6 +43,22 @@ it('lists vouchers by type', function () {
         ->assertJsonPath('success', true);
 });
 
+it('passes the masterID (not the connection code) to Tally when showing a voucher', function () {
+    // Same regression class as LedgerController — VoucherController@show has to
+    // declare (string $connection, string $masterID) so Laravel doesn't bind
+    // {connection} into $masterID. We don't care about the response shape here;
+    // the assertion is on the outbound XML.
+    $conn = voucherConnection();
+    $this->mockTallyClient('<ENVELOPE><BODY><DATA><TALLYMESSAGE><VOUCHER><MASTERID>42</MASTERID></VOUCHER></TALLYMESSAGE></DATA></BODY></ENVELOPE>');
+
+    $this->actingAs(voucherUser())
+        ->getJson("/api/tally/{$conn->code}/vouchers/MID-42");
+
+    $xml = $this->lastTallyRequestXml();
+    expect($xml)->toContain('MID-42');
+    expect($xml)->not->toContain("<ID TYPE=\"Name\">{$conn->code}</ID>");
+});
+
 it('requires type parameter for listing', function () {
     $conn = voucherConnection();
     $user = voucherUser();

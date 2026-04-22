@@ -4,6 +4,7 @@ namespace Modules\Tally\Services\Masters;
 
 use Modules\Tally\Services\AuditLogger;
 use Modules\Tally\Services\Concerns\CachesMasterData;
+use Modules\Tally\Services\Fields\TallyFieldRegistry;
 use Modules\Tally\Services\TallyHttpClient;
 use Modules\Tally\Services\TallyXmlBuilder;
 use Modules\Tally\Services\TallyXmlParser;
@@ -19,7 +20,14 @@ class StockGroupService
     public function list(): array
     {
         return $this->cachedList('stockgroup:list', function () {
-            $xml = TallyXmlBuilder::buildCollectionExportRequest('List of Stock Groups');
+            // EXPLODEFLAG=No + explicit FETCHLIST: stock groups reference a default
+            // BASEUNITS (unit name) for their items, same crash class as Units.
+            // CLOSINGBALANCE included so the controller's zero_balance filter works.
+            $xml = TallyXmlBuilder::buildCollectionExportRequest(
+                'List of Stock Groups',
+                fetchFields: ['NAME', 'PARENT', 'BASEUNITS', 'CLOSINGBALANCE'],
+                explode: false,
+            );
             $response = $this->client->sendXml($xml);
 
             return TallyXmlParser::extractCollection($response, 'STOCKGROUP');
@@ -28,11 +36,16 @@ class StockGroupService
 
     public function get(string $name): ?array
     {
+        // Same Object-export hang as Group — filter from the cached collection list instead.
         return $this->cachedGet("stockgroup:{$name}", function () use ($name) {
-            $xml = TallyXmlBuilder::buildObjectExportRequest('Stock Group', $name);
-            $response = $this->client->sendXml($xml);
+            foreach ($this->list() as $row) {
+                $rowName = $row['@attributes']['NAME'] ?? ($row['NAME']['#text'] ?? $row['NAME'] ?? null);
+                if ($rowName !== null && strcasecmp((string) $rowName, $name) === 0) {
+                    return $row;
+                }
+            }
 
-            return TallyXmlParser::extractObject($response, 'STOCKGROUP');
+            return null;
         });
     }
 
@@ -41,6 +54,7 @@ class StockGroupService
      */
     public function create(array $data): array
     {
+        $data = TallyFieldRegistry::canonicalize(TallyFieldRegistry::STOCK_GROUP, $data);
         $xml = TallyXmlBuilder::buildImportMasterRequest('STOCKGROUP', $data, 'Create');
         $response = $this->client->sendXml($xml);
         $result = TallyXmlParser::parseImportResult($response);
@@ -55,6 +69,7 @@ class StockGroupService
 
     public function update(string $name, array $data): array
     {
+        $data = TallyFieldRegistry::canonicalize(TallyFieldRegistry::STOCK_GROUP, $data);
         $data['NAME'] = $name;
         $xml = TallyXmlBuilder::buildImportMasterRequest('STOCKGROUP', $data, 'Alter');
         $response = $this->client->sendXml($xml);

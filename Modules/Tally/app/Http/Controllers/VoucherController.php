@@ -40,7 +40,7 @@ class VoucherController extends Controller
         ]);
     }
 
-    public function show(string $masterID): JsonResponse
+    public function show(string $connection, string $masterID): JsonResponse
     {
         $voucher = $this->service->get($masterID);
 
@@ -64,7 +64,32 @@ class VoucherController extends Controller
         ], $result['errors'] === 0 ? 201 : 422);
     }
 
-    public function update(UpdateVoucherRequest $request, string $masterID): JsonResponse
+    /**
+     * Bulk-import multiple vouchers of the same type in one Tally request.
+     *
+     * Payload: { type: "Sales", vouchers: [ {...}, {...}, ... ] }
+     */
+    public function batch(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'type' => ['required', new Enum(VoucherType::class)],
+            'vouchers' => ['required', 'array', 'min:1'],
+            'vouchers.*' => ['array'],
+        ]);
+
+        $type = VoucherType::from($validated['type']);
+        $result = $this->service->createBatch($type, $validated['vouchers']);
+
+        return response()->json([
+            'success' => $result['errors'] === 0,
+            'data' => $result,
+            'message' => $result['errors'] === 0
+                ? 'Vouchers created successfully'
+                : 'Failed to create one or more vouchers',
+        ], $result['errors'] === 0 ? 201 : 422);
+    }
+
+    public function update(UpdateVoucherRequest $request, string $connection, string $masterID): JsonResponse
     {
         $validated = $request->validated();
         $type = VoucherType::from($validated['type']);
@@ -77,7 +102,7 @@ class VoucherController extends Controller
         ]);
     }
 
-    public function destroy(DestroyVoucherRequest $request, string $masterID): JsonResponse
+    public function destroy(DestroyVoucherRequest $request, string $connection, string $masterID): JsonResponse
     {
         $validated = $request->validated();
 

@@ -33,6 +33,7 @@ php artisan serve   # sanity check http://127.0.0.1:8000
 ```bash
 composer require nwidart/laravel-modules:^13.0
 composer require laravel/sanctum
+composer require mpdf/mpdf       # required by Phase 9I (voucher PDF generation)
 php artisan install:api          # publishes Sanctum + api routes
 ```
 
@@ -167,17 +168,18 @@ $user = User::factory()->create([
     'password' => bcrypt('secret123'),
 ]);
 
-$user->tally_permissions = [
-    TallyPermission::ViewMasters->value,
-    TallyPermission::ManageMasters->value,
-    TallyPermission::ViewVouchers->value,
-    TallyPermission::ManageVouchers->value,
-    TallyPermission::ViewReports->value,
-    TallyPermission::ManageConnections->value,
-];
+// All 9 permissions — grant subset in production.
+$user->tally_permissions = array_column(TallyPermission::cases(), 'value');
+//   = view_masters, manage_masters, view_vouchers, manage_vouchers,
+//     view_reports, manage_connections, approve_vouchers (9J),
+//     manage_integrations (9I), send_invoices (9I)
 $user->save();
 
-echo $user->createToken('dev')->plainTextToken;
+// Token name prefix determines rate-limit tier (see CONFIGURATION.md § Rate limiting):
+//   smoke-test-* / internal-* / system-*  → internal tier (effectively unlimited)
+//   batch-* / sync-*                       → batch tier (fat pipe for month-end)
+//   anything else                          → standard tier (60 writes/min)
+echo $user->createToken('ui-dashboard')->plainTextToken;
 ```
 
 Save the printed token — every API request needs `Authorization: Bearer {token}`.

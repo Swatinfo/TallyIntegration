@@ -3,8 +3,9 @@
 Self-contained Laravel module for integrating with **TallyPrime** accounting software via the HTTP/XML API on port 9000.
 
 - **Namespace:** `Modules\Tally\*`
-- **Requires:** Laravel 11+ (Laravel 13 recommended), PHP 8.4, `nwidart/laravel-modules` v13, Sanctum, a queue driver, MariaDB / MySQL / PostgreSQL
-- **Surface:** 44 REST routes, 9 controllers, 20+ services, 7 queued jobs, bidirectional sync engine
+- **Requires:** Laravel 11+ (Laravel 13 recommended), PHP 8.4, `nwidart/laravel-modules` v13, `laravel/sanctum` v4, `mpdf/mpdf` v8.3, a queue driver, MariaDB / MySQL / PostgreSQL
+- **Surface:** 165 REST routes, ~31 controllers, ~34 services, 9 queued jobs, 20 voucher types, 18 report types, 9 permissions, bidirectional sync + maker-checker workflow + MNC consolidation + webhooks + PDF/email
+- **Shipped phases:** 9A · 9B · 9C · 9D · 9F · 9G · 9I · 9J · 9K · 9L · 9Z (Phase 9E Tax deferred — full plan in `../../.docs/features.md`)
 - **Works with:** TallyPrime Standalone (Silver), TallyPrime Server (Gold), TallyPrime Cloud Access
 
 ---
@@ -20,6 +21,7 @@ Self-contained Laravel module for integrating with **TallyPrime** accounting sof
 | Walk through in 10 minutes | [docs/QUICK-START.md](docs/QUICK-START.md) |
 | Call the REST API | [docs/API-USAGE.md](docs/API-USAGE.md) |
 | Debug a problem | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) |
+| Smoke-test every endpoint at once | [scripts/README.md](scripts/README.md) |
 
 Deep references (project-level): `../../.docs/tally-integration.md`, `../../.docs/tally-api-reference.md`, `../../.claude/services-reference.md`.
 
@@ -45,13 +47,14 @@ All responses: `{ success, data, message }`. All routes: `auth:sanctum` + permis
 
 ```
 Modules/Tally/
-├── app/               # 9 controllers, 20+ services, 8 models, 7 jobs, 8 events, 2 commands
-├── config/config.php  # published as config('tally.*')
+├── app/               # ~31 controllers, ~34 services, 13 models, 9 jobs, 8 events + 1 listener, 2 commands
+├── config/config.php  # published as config('tally.*') — connection, logging, cache, circuit breaker, workflow, integration
 ├── database/
 │   ├── factories/     # TallyConnectionFactory
-│   └── migrations/    # 10 migrations (10 tables + users column)
+│   └── migrations/    # 20 migrations (17 tables + column additions)
 ├── docs/              # the setup guides linked above
-├── routes/api.php     # 44 route registrations
+├── scripts/           # operational scripts (tally-smoke-test.sh + lib/)
+├── routes/api.php     # 165 route registrations
 ├── module.json        # nwidart manifest
 └── composer.json
 ```

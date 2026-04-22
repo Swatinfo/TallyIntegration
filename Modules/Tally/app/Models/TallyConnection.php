@@ -4,6 +4,7 @@ namespace Modules\Tally\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Modules\Tally\Database\Factories\TallyConnectionFactory;
 
@@ -28,6 +29,9 @@ class TallyConnection extends Model
         'last_alter_master_id',
         'last_alter_voucher_id',
         'last_synced_at',
+        'tally_organization_id',
+        'tally_company_id',
+        'tally_branch_id',
     ];
 
     protected function casts(): array
@@ -60,5 +64,21 @@ class TallyConnection extends Model
     public function groups(): HasMany
     {
         return $this->hasMany(TallyGroup::class, 'tally_connection_id');
+    }
+
+    // Phase 9Z — MNC hierarchy
+    public function organization(): BelongsTo
+    {
+        return $this->belongsTo(TallyOrganization::class, 'tally_organization_id');
+    }
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(TallyCompany::class, 'tally_company_id');
+    }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(TallyBranch::class, 'tally_branch_id');
     }
 }

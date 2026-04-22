@@ -19,7 +19,8 @@ composer show | grep -E "nwidart|sanctum"
 | Dependency | Required | How to add if missing |
 |---|---|---|
 | `nwidart/laravel-modules` | v13 | `composer require nwidart/laravel-modules:^13.0` |
-| `laravel/sanctum` | any | `composer require laravel/sanctum && php artisan install:api` |
+| `laravel/sanctum` | v4 | `composer require laravel/sanctum && php artisan install:api` |
+| `mpdf/mpdf` | ^8.3 | `composer require mpdf/mpdf` — required by Phase 9I voucher PDFs |
 | `users` table | must exist | Part of default Laravel — likely already there |
 | Queue driver | database / redis / sqs | See your existing `QUEUE_CONNECTION` in `.env` |
 
@@ -27,17 +28,37 @@ composer show | grep -E "nwidart|sanctum"
 
 ## 2. Check for naming conflicts BEFORE copying
 
-The module creates these tables:
+The module creates 17 tables:
 
 ```
+# Core (8)
 tally_connections, tally_ledgers, tally_vouchers, tally_groups,
 tally_stock_items, tally_syncs, tally_audit_logs, tally_response_metrics
+
+# Phase 9J — workflow
+tally_draft_vouchers
+
+# Phase 9L — recurring
+tally_recurring_vouchers
+
+# Phase 9Z — MNC hierarchy
+tally_organizations, tally_companies, tally_branches
+
+# Phase 9I — integration
+tally_webhook_endpoints, tally_webhook_deliveries,
+tally_voucher_attachments, tally_import_jobs
 ```
 
-And adds one column:
+And adds columns to existing tables:
 
 ```
-users.tally_permissions  (json, nullable, after remember_token)
+users.tally_permissions                       (json, nullable, after remember_token)
+tally_connections.last_alter_master_id         (bigint, for AlterID sync)
+tally_connections.last_alter_voucher_id        (bigint, for AlterID sync)
+tally_connections.last_synced_at               (timestamp)
+tally_connections.tally_organization_id        (Phase 9Z FK, nullable)
+tally_connections.tally_company_id             (Phase 9Z FK, nullable)
+tally_connections.tally_branch_id              (Phase 9Z FK, nullable)
 ```
 
 Quick check:
@@ -257,7 +278,7 @@ composer dump-autoload
 # remove TALLY_* from .env
 ```
 
-Tables dropped in rollback: all 8 `tally_*` tables + the `users.tally_permissions` column.
+Tables dropped in rollback: all 17 `tally_*` tables + the `users.tally_permissions` column + hierarchy FKs on `tally_connections`.
 
 ---
 
@@ -274,3 +295,22 @@ Tables dropped in rollback: all 8 `tally_*` tables + the `users.tally_permission
 - Configure further: [CONFIGURATION.md](CONFIGURATION.md)
 - Register your first connection + create a voucher: [QUICK-START.md](QUICK-START.md)
 - Browse the REST API: [API-USAGE.md](API-USAGE.md)
+
+---
+
+## TL;DR — 10-step port checklist
+
+When porting this module to another existing Laravel 11+ project:
+
+1. `composer require nwidart/laravel-modules:^13 laravel/sanctum mpdf/mpdf`
+2. `php artisan install:api` → verify `HasApiTokens` is on `App\Models\User`
+3. Copy `Modules/Tally/` into the target project's `Modules/` directory
+4. Add PSR-4 entries to `composer.json` (`Modules\\Tally\\` → `Modules/Tally/app/`, plus Database\Factories\ + Database\Seeders\ variants) and `composer dump-autoload`
+5. Port `App\Providers\AppServiceProvider::boot()` — the 3 tiered `RateLimiter::for(...)` closures (`tally-api`, `tally-write`, `tally-reports`) — see CONFIGURATION.md § Rate limiting for the canonical definition
+6. Add the `tally` channel to `config/logging.php`
+7. Add `TALLY_*` env vars (host/port/company/timeout/cache/circuit-breaker/workflow/integration keys as needed)
+8. `php artisan module:enable Tally && php artisan migrate` (applies 20 migrations)
+9. Run a queue worker (`php artisan queue:work`) + cron (`* * * * * php artisan schedule:run`) — required for sync, recurring vouchers, webhooks, and imports
+10. Run `bash Modules/Tally/scripts/tally-smoke-test.sh --clean` to verify the full 165-endpoint surface works end-to-end
+
+If step 10 passes, the module is running. What you build **on top** (admin UI, ERP mapping, tenancy, notification templates, GSP integration for Phase 9E) are separate modules — see CLAUDE.md and `.docs/product-roadmap.md`.

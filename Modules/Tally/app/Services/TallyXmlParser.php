@@ -14,16 +14,24 @@ class TallyXmlParser
     {
         $xml = self::sanitizeXml($xml);
 
-        $element = @simplexml_load_string($xml, SimpleXMLElement::class, LIBXML_NOCDATA);
+        $previous = libxml_use_internal_errors(true);
+        libxml_clear_errors();
 
-        if ($element === false) {
-            $errors = self::getXmlErrors();
+        try {
+            $element = simplexml_load_string($xml, SimpleXMLElement::class, LIBXML_NOCDATA);
 
-            throw new TallyXmlParseException(
-                'Failed to parse TallyPrime XML response: '.$errors,
-                mb_substr($xml, 0, 1000),
-                libxml_get_errors(),
-            );
+            if ($element === false) {
+                $capturedErrors = libxml_get_errors();
+                libxml_clear_errors();
+
+                throw new TallyXmlParseException(
+                    'Failed to parse TallyPrime XML response: '.self::formatXmlErrors($capturedErrors),
+                    self::excerptAroundError($xml, $capturedErrors),
+                    $capturedErrors,
+                );
+            }
+        } finally {
+            libxml_use_internal_errors($previous);
         }
 
         return self::xmlToArray($element);
@@ -44,6 +52,13 @@ class TallyXmlParser
         // Official response path: BODY > DATA > IMPORTRESULT
         $result = $data['BODY']['DATA']['IMPORTRESULT'] ?? [];
 
+        $errors = (int) ($result['ERRORS'] ?? 0);
+        $exceptions = (int) ($result['EXCEPTIONS'] ?? 0);
+
+        // Tally returns EXCEPTIONS>0 with ERRORS=0 when an import silently
+        // skips a row because of a missing reference master (e.g. PARENT
+        // doesn't exist). Roll exceptions into errors so callers don't treat
+        // a no-op import as a successful create.
         return [
             'created' => (int) ($result['CREATED'] ?? 0),
             'altered' => (int) ($result['ALTERED'] ?? 0),
@@ -52,8 +67,10 @@ class TallyXmlParser
             'lastmid' => $result['LASTMID'] ?? null,
             'combined' => (int) ($result['COMBINED'] ?? 0),
             'ignored' => (int) ($result['IGNORED'] ?? 0),
-            'errors' => (int) ($result['ERRORS'] ?? 0),
+            'errors' => $errors + $exceptions,
+            'exceptions' => $exceptions,
             'cancelled' => (int) ($result['CANCELLED'] ?? 0),
+            'line_error' => isset($result['LINEERROR']) ? (is_array($result['LINEERROR']) ? ($result['LINEERROR']['#text'] ?? null) : $result['LINEERROR']) : null,
         ];
     }
 
@@ -214,6 +231,10 @@ class TallyXmlParser
 
     /**
      * Convert a SimpleXMLElement to a PHP array recursively.
+     *
+     * When an element has attributes but no child elements, the text content is
+     * preserved under the '#text' key (Tally stamps TYPE="String" / TYPE="Logical"
+     * on most leaf fields — without this, their values silently disappear).
      */
     private static function xmlToArray(SimpleXMLElement $element): array|string
     {
@@ -224,8 +245,11 @@ class TallyXmlParser
             $result['@attributes'][$attrName] = (string) $attrValue;
         }
 
+        $hasChildren = false;
+
         // Handle child elements
         foreach ($element->children() as $childName => $child) {
+            $hasChildren = true;
             $value = self::xmlToArray($child);
 
             if (isset($result[$childName])) {
@@ -244,29 +268,83 @@ class TallyXmlParser
             return (string) $element;
         }
 
+        // Attributes + text but no children — preserve the text content.
+        if (! $hasChildren) {
+            $text = trim((string) $element);
+            if ($text !== '') {
+                $result['#text'] = $text;
+            }
+        }
+
         return $result;
     }
 
     /**
-     * Remove BOM and invalid characters from XML string.
+     * Remove BOM and invalid XML 1.0 characters from a Tally response.
+     *
+     * Tally uses ASCII control bytes (0x03 ETX, 0x04 EOT) as internal delimiters
+     * inside PARENTSTRUCTURE / PARENT for reserved masters. XML 1.0 forbids
+     * 0x00–0x08, 0x0B, 0x0C and 0x0E–0x1F both as raw bytes and as numeric
+     * character references, so both forms must be stripped before parsing.
      */
     private static function sanitizeXml(string $xml): string
     {
         // Remove UTF-8 BOM
         $xml = ltrim($xml, "\xEF\xBB\xBF");
 
-        // Remove null bytes
-        return str_replace("\0", '', $xml);
+        // Strip raw control bytes that are invalid in XML 1.0.
+        $xml = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', '', $xml);
+
+        // Strip numeric character references to the same forbidden range
+        // (decimal 1-8, 11, 12, 14-31; hex 0x1-0x8, 0xB, 0xC, 0xE-0x1F).
+        return preg_replace(
+            '/&#(?:0*(?:[1-8]|1[12]|1[4-9]|2[0-9]|3[01])|[xX]0*(?:[1-8bBcCeEfF]|1[0-9a-fA-F]));/',
+            '',
+            $xml
+        );
     }
 
-    private static function getXmlErrors(): string
+    /**
+     * Return ~500 chars around the first libxml error line so exception
+     * excerpts point at the neighbourhood of the failure instead of the
+     * first 1 KB of a 20 KB response.
+     *
+     * @param  array<int, \LibXMLError>  $errors
+     */
+    private static function excerptAroundError(string $xml, array $errors): string
     {
-        $errors = libxml_get_errors();
-        libxml_clear_errors();
+        $line = $errors[0]->line ?? 0;
 
+        if ($line <= 0) {
+            return mb_substr($xml, 0, 1000);
+        }
+
+        $lines = preg_split('/\r\n|\r|\n/', $xml);
+        if (! is_array($lines)) {
+            return mb_substr($xml, 0, 1000);
+        }
+
+        $start = max(0, $line - 3);
+        $end = min(count($lines), $line + 3);
+        $window = array_slice($lines, $start, $end - $start);
+        $prefix = '[libxml line '.$line.', showing '.($start + 1).'-'.$end.']'."\n";
+
+        return $prefix.mb_substr(implode("\n", $window), 0, 1000);
+    }
+
+    /**
+     * @param  array<int, \LibXMLError>  $errors
+     */
+    private static function formatXmlErrors(array $errors): string
+    {
         $messages = [];
         foreach ($errors as $error) {
-            $messages[] = trim($error->message);
+            $messages[] = sprintf(
+                '%s (line %d, column %d)',
+                trim($error->message),
+                $error->line,
+                $error->column,
+            );
         }
 
         return implode('; ', $messages) ?: 'Unknown XML error';

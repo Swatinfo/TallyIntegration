@@ -6,6 +6,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Modules\Tally\Exceptions\TallyConnectionException;
 use Modules\Tally\Exceptions\TallyResponseException;
+use Modules\Tally\Logging\TallyLogChannel;
 
 class TallyHttpClient
 {
@@ -15,11 +16,19 @@ class TallyHttpClient
 
     private string $company;
 
-    public function __construct(string $host, int $port, string $company = '', int $timeout = 30)
-    {
+    private string $connectionCode;
+
+    public function __construct(
+        string $host,
+        int $port,
+        string $company = '',
+        int $timeout = 30,
+        string $connectionCode = 'default',
+    ) {
         $this->url = "http://{$host}:{$port}";
         $this->company = $company;
         $this->timeout = $timeout;
+        $this->connectionCode = $connectionCode;
     }
 
     /**
@@ -40,6 +49,11 @@ class TallyHttpClient
         return $this->company;
     }
 
+    public function getConnectionCode(): string
+    {
+        return $this->connectionCode;
+    }
+
     /**
      * Send an XML request to TallyPrime and return the raw XML response.
      *
@@ -48,6 +62,11 @@ class TallyHttpClient
      */
     public function sendXml(string $xml): string
     {
+        TallyLogChannel::ensureTodayLogFile();
+
+        $breaker = app(CircuitBreaker::class);
+        $breaker->assertAvailable($this->connectionCode);
+
         $startTime = microtime(true);
 
         try {
@@ -62,6 +81,7 @@ class TallyHttpClient
 
             if ($response->failed()) {
                 $this->logError($xml, "HTTP {$response->status()}", $durationMs);
+                $breaker->recordFailure($this->connectionCode);
 
                 throw new TallyResponseException(
                     "TallyPrime returned HTTP {$response->status()}",
@@ -71,11 +91,13 @@ class TallyHttpClient
             }
 
             $this->logRequest($xml, $response->body(), $durationMs);
+            $breaker->recordSuccess($this->connectionCode);
 
             return $response->body();
         } catch (ConnectionException $e) {
             $durationMs = (microtime(true) - $startTime) * 1000;
             $this->logError($xml, $e->getMessage(), $durationMs);
+            $breaker->recordFailure($this->connectionCode);
 
             throw new TallyConnectionException(
                 "Cannot connect to TallyPrime at {$this->url}. Ensure Tally is running in server mode.",
@@ -109,7 +131,10 @@ class TallyHttpClient
     public function isConnected(): bool
     {
         try {
-            $xml = TallyXmlBuilder::buildExportRequest('List of Companies');
+            // Empty $company suppresses <SVCURRENTCOMPANY>: the List-of-Companies
+            // report is a global Tally collection; pinning it to one company
+            // scopes the response away from the thing we're asking about.
+            $xml = TallyXmlBuilder::buildExportRequest('List of Companies', company: '');
             $this->sendXml($xml);
 
             return true;
@@ -125,7 +150,8 @@ class TallyHttpClient
      */
     public function getCompanies(): array
     {
-        $xml = TallyXmlBuilder::buildExportRequest('List of Companies');
+        // See isConnected() for why $company is empty.
+        $xml = TallyXmlBuilder::buildExportRequest('List of Companies', company: '');
         $response = $this->sendXml($xml);
 
         return TallyXmlParser::extractCompanyList($response);

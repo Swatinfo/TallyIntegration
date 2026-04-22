@@ -129,4 +129,201 @@ class ReportService
 
         return TallyXmlParser::extractReport($response);
     }
+
+    // -----------------------------------------------------------------------
+    // Phase 9B additions — management + operational reports
+    // -----------------------------------------------------------------------
+
+    /**
+     * Cash / Bank Book — daily cash & bank movements for a specific ledger.
+     *
+     * @param  string  $ledger  Cash or bank ledger name (e.g. "HDFC Current A/c")
+     * @param  string  $from  YYYYMMDD
+     * @param  string  $to  YYYYMMDD
+     */
+    public function cashBankBook(string $ledger, string $from, string $to): array
+    {
+        $filters = [
+            'LEDGERNAME' => $ledger,
+            'SVFROMDATE' => $from,
+            'SVTODATE' => $to,
+        ];
+
+        $xml = TallyXmlBuilder::buildExportRequest('Cash/Bank Book', [], $filters);
+        $response = $this->client->sendXml($xml);
+
+        return TallyXmlParser::extractReport($response);
+    }
+
+    /**
+     * Sales Register — all sales vouchers in a period.
+     */
+    public function salesRegister(string $from, string $to): array
+    {
+        $filters = [
+            'VOUCHERTYPENAME' => 'Sales',
+            'SVFROMDATE' => $from,
+            'SVTODATE' => $to,
+        ];
+
+        $xml = TallyXmlBuilder::buildExportRequest('Voucher Register', [], $filters);
+        $response = $this->client->sendXml($xml);
+
+        return TallyXmlParser::extractReport($response);
+    }
+
+    /**
+     * Purchase Register — all purchase vouchers in a period.
+     */
+    public function purchaseRegister(string $from, string $to): array
+    {
+        $filters = [
+            'VOUCHERTYPENAME' => 'Purchase',
+            'SVFROMDATE' => $from,
+            'SVTODATE' => $to,
+        ];
+
+        $xml = TallyXmlBuilder::buildExportRequest('Voucher Register', [], $filters);
+        $response = $this->client->sendXml($xml);
+
+        return TallyXmlParser::extractReport($response);
+    }
+
+    /**
+     * Ageing Analysis — receivables / payables bucketed by age.
+     *
+     * @param  string  $type  'receivable' or 'payable'
+     * @param  string|null  $asOf  YYYYMMDD cutoff date
+     */
+    public function agingAnalysis(string $type = 'receivable', ?string $asOf = null): array
+    {
+        $reportName = $type === 'payable' ? 'Bills Payable' : 'Bills Receivable';
+        $filters = ['SHOWAGEWISE' => 'Yes'];
+        if ($asOf) {
+            $filters['SVTODATE'] = $asOf;
+        }
+
+        $xml = TallyXmlBuilder::buildExportRequest($reportName, [], $filters);
+        $response = $this->client->sendXml($xml);
+
+        return TallyXmlParser::extractReport($response);
+    }
+
+    /**
+     * Cash Flow Statement.
+     */
+    public function cashFlow(string $from, string $to): array
+    {
+        $filters = [
+            'SVFROMDATE' => $from,
+            'SVTODATE' => $to,
+        ];
+
+        $xml = TallyXmlBuilder::buildExportRequest('Cash Flow', [], $filters);
+        $response = $this->client->sendXml($xml);
+
+        return TallyXmlParser::extractReport($response);
+    }
+
+    /**
+     * Funds Flow Statement.
+     */
+    public function fundsFlow(string $from, string $to): array
+    {
+        $filters = [
+            'SVFROMDATE' => $from,
+            'SVTODATE' => $to,
+        ];
+
+        $xml = TallyXmlBuilder::buildExportRequest('Funds Flow', [], $filters);
+        $response = $this->client->sendXml($xml);
+
+        return TallyXmlParser::extractReport($response);
+    }
+
+    /**
+     * Receipts and Payments report (non-accrual summary).
+     */
+    public function receiptsPayments(string $from, string $to): array
+    {
+        $filters = [
+            'SVFROMDATE' => $from,
+            'SVTODATE' => $to,
+        ];
+
+        $xml = TallyXmlBuilder::buildExportRequest('Receipts and Payments', [], $filters);
+        $response = $this->client->sendXml($xml);
+
+        return TallyXmlParser::extractReport($response);
+    }
+
+    /**
+     * Stock Item Movement Analysis — ins/outs of a specific stock item.
+     */
+    public function stockMovement(string $stockItem, string $from, string $to): array
+    {
+        $filters = [
+            'STOCKITEMNAME' => $stockItem,
+            'SVFROMDATE' => $from,
+            'SVTODATE' => $to,
+        ];
+
+        $xml = TallyXmlBuilder::buildExportRequest('Stock Item Movement Analysis', [], $filters);
+        $response = $this->client->sendXml($xml);
+
+        return TallyXmlParser::extractReport($response);
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 9D — Banking reports
+    // -----------------------------------------------------------------------
+
+    /**
+     * Bank Reconciliation — shows reconciled vs unreconciled entries for a bank ledger.
+     */
+    public function bankReconciliation(string $bankLedger, string $from, string $to): array
+    {
+        $filters = [
+            'LEDGERNAME' => $bankLedger,
+            'SVFROMDATE' => $from,
+            'SVTODATE' => $to,
+        ];
+
+        $xml = TallyXmlBuilder::buildExportRequest('Bank Reconciliation', [], $filters);
+        $response = $this->client->sendXml($xml);
+
+        return TallyXmlParser::extractReport($response);
+    }
+
+    /**
+     * Cheque Register — all cheques (issued/received/cleared) in a period.
+     */
+    public function chequeRegister(string $from, string $to): array
+    {
+        $filters = [
+            'SVFROMDATE' => $from,
+            'SVTODATE' => $to,
+        ];
+
+        $xml = TallyXmlBuilder::buildExportRequest('Cheque Register', [], $filters);
+        $response = $this->client->sendXml($xml);
+
+        return TallyXmlParser::extractReport($response);
+    }
+
+    /**
+     * Post-dated cheques — future-dated payments / receipts not yet active.
+     */
+    public function postDatedCheques(string $from, string $to): array
+    {
+        $filters = [
+            'SVFROMDATE' => $from,
+            'SVTODATE' => $to,
+        ];
+
+        $xml = TallyXmlBuilder::buildExportRequest('Post-Dated Summary', [], $filters);
+        $response = $this->client->sendXml($xml);
+
+        return TallyXmlParser::extractReport($response);
+    }
 }

@@ -8,6 +8,7 @@ use Illuminate\Routing\Controller;
 use Modules\Tally\Http\Requests\StoreConnectionRequest;
 use Modules\Tally\Http\Requests\UpdateConnectionRequest;
 use Modules\Tally\Models\TallyConnection;
+use Modules\Tally\Services\CircuitBreaker;
 use Modules\Tally\Services\MetricsCollector;
 use Modules\Tally\Services\TallyConnectionManager;
 use Modules\Tally\Services\TallyHttpClient;
@@ -128,6 +129,40 @@ class TallyConnectionController extends Controller
             'success' => true,
             'data' => ['companies' => $companies],
             'message' => 'Companies discovered successfully',
+        ]);
+    }
+
+    /**
+     * List loaded companies as a top-level resource (distinct from /discover
+     * which emphasises the refresh aspect — this is the simple list).
+     */
+    public function companies(TallyConnection $connection, TallyConnectionManager $manager): JsonResponse
+    {
+        $client = $manager->fromConnection($connection);
+
+        return response()->json([
+            'success' => true,
+            'data' => $client->getCompanies(),
+            'message' => 'Companies retrieved successfully',
+        ]);
+    }
+
+    /**
+     * Read the circuit-breaker state for this connection. Useful for dashboards
+     * — lets operators see whether the breaker has tripped before any user does.
+     */
+    public function circuitState(TallyConnection $connection, CircuitBreaker $breaker): JsonResponse
+    {
+        $state = $breaker->getState($connection->code);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'connection' => $connection->code,
+                'state' => $state,
+                'available' => $state !== 'open',
+            ],
+            'message' => "Circuit state for {$connection->code}: {$state}",
         ]);
     }
 
